@@ -13,14 +13,24 @@ use linear_btree::{
 	},
 	node::{
 		ItemAddr,
-		Node
-	},
-	utils::binary_search_min
+		Node,
+		internal::Branch
+	}
 };
 
 pub struct ExclusiveRange<T> {
 	start: T,
 	end: T
+}
+
+impl<T> ExclusiveRange<T> {
+	fn contains(&self, t: T) -> bool where T: PartialOrd {
+		self.start >= t && t < self.end
+	}
+
+	fn intersects(&self, other: &Range<T>) -> bool where T: PartialOrd {
+		panic!("TODO")
+	}
 }
 
 impl<T: Ord> Ord for ExclusiveRange<T> {
@@ -94,26 +104,26 @@ impl<K, V> RangeMap<K, V> {
 		match self.btree.node(id) {
 			Node::Internal(node) => {
 				let branches = node.branches();
-				match binary_search_min(branches, &key.start) {
+				match binary_search_previous_range(branches, key) {
 					Some(i) => {
 						let b = &branches[i];
-						if b.item.key().contains(key) {
+						if b.item.key().intersects(key) {
 							Ok(i)
 						} else {
 							Err((i, Some(b.child)))
 						}
 					},
 					None => {
-						Err((0, Some(node.first_child())))
+						Err((0, Some(node.first_child_id())))
 					}
 				}
 			},
 			Node::Leaf(leaf) => {
 				let items = leaf.items();
-				match binary_search_min(items, &key.start) {
+				match binary_search_previous_range(items, key) {
 					Some(i) => {
 						let item = &items[i];
-						if item.key().contains(key) {
+						if item.key().intersects(key) {
 							Ok(i)
 						} else {
 							Err((i, None))
@@ -170,5 +180,39 @@ impl<K, V> RangeMap<K, V> {
 	/// Returns the value that was bound to this key, if any.
 	pub fn remove_range(&mut self, key: &Range<K>) -> Option<V> {
 		panic!("TODO")
+	}
+}
+
+/// Search in `branches` for the item with the nearest range key before or intersecting the given one.
+///
+/// `branches` is assumed to be sorted.
+#[inline]
+pub fn binary_search_previous_range<T, V>(branches: &[Branch<ExclusiveRange<T>, V>], range: &Range<T>) -> Option<usize> where T: PartialOrd {
+	if branches.is_empty() || branches[0].item.key().start >= range.end {
+		None
+	} else {
+		let mut i = 0;
+		let mut j = branches.len() - 1;
+
+		if branches[j].item.key().start < range.end {
+			return Some(j)
+		}
+
+		// invariants:
+		// vec[i].item.key().start < range.end
+		// vec[j].item.key().start >= range.end
+		// j > i
+
+		while j-i > 1 {
+			let k = (i + j) / 2;
+
+			if branches[k].item.key().start >= range.end {
+				j = k;
+			} else {
+				i = k;
+			}
+		}
+
+		Some(i)
 	}
 }
