@@ -17,26 +17,26 @@ fn insert_exclusive_ranges() {
 	range_map.insert_range(90..95, false);
 
 	assert_eq!(range_map.range_count(), 10);
-	assert_eq!(range_map.get(&02), Some(&true));
-	assert_eq!(range_map.get(&07), None);
-	assert_eq!(range_map.get(&12), Some(&false));
-	assert_eq!(range_map.get(&17), None);
-	assert_eq!(range_map.get(&22), Some(&true));
-	assert_eq!(range_map.get(&27), None);
-	assert_eq!(range_map.get(&32), Some(&false));
-	assert_eq!(range_map.get(&37), None);
-	assert_eq!(range_map.get(&42), Some(&true));
-	assert_eq!(range_map.get(&47), None);
-	assert_eq!(range_map.get(&52), Some(&false));
-	assert_eq!(range_map.get(&57), None);
-	assert_eq!(range_map.get(&62), Some(&true));
-	assert_eq!(range_map.get(&67), None);
-	assert_eq!(range_map.get(&72), Some(&false));
-	assert_eq!(range_map.get(&77), None);
-	assert_eq!(range_map.get(&82), Some(&true));
-	assert_eq!(range_map.get(&87), None);
-	assert_eq!(range_map.get(&92), Some(&false));
-	assert_eq!(range_map.get(&97), None);
+	assert_eq!(range_map.get(02), Some(&true));
+	assert_eq!(range_map.get(07), None);
+	assert_eq!(range_map.get(12), Some(&false));
+	assert_eq!(range_map.get(17), None);
+	assert_eq!(range_map.get(22), Some(&true));
+	assert_eq!(range_map.get(27), None);
+	assert_eq!(range_map.get(32), Some(&false));
+	assert_eq!(range_map.get(37), None);
+	assert_eq!(range_map.get(42), Some(&true));
+	assert_eq!(range_map.get(47), None);
+	assert_eq!(range_map.get(52), Some(&false));
+	assert_eq!(range_map.get(57), None);
+	assert_eq!(range_map.get(62), Some(&true));
+	assert_eq!(range_map.get(67), None);
+	assert_eq!(range_map.get(72), Some(&false));
+	assert_eq!(range_map.get(77), None);
+	assert_eq!(range_map.get(82), Some(&true));
+	assert_eq!(range_map.get(87), None);
+	assert_eq!(range_map.get(92), Some(&false));
+	assert_eq!(range_map.get(97), None);
 }
 
 #[test]
@@ -47,12 +47,12 @@ fn insert_inclusive_ranges_a() {
 	range_map.insert_range(05..15, false); // case (A)
 
 	assert_eq!(range_map.range_count(), 3);
-	assert_eq!(range_map.get(&00), Some(&true));
-	assert_eq!(range_map.get(&04), Some(&true));
-	assert_eq!(range_map.get(&05), Some(&false));
-	assert_eq!(range_map.get(&14), Some(&false));
-	assert_eq!(range_map.get(&19), Some(&true));
-	assert_eq!(range_map.get(&20), None);
+	assert_eq!(range_map.get(00), Some(&true));
+	assert_eq!(range_map.get(04), Some(&true));
+	assert_eq!(range_map.get(05), Some(&false));
+	assert_eq!(range_map.get(14), Some(&false));
+	assert_eq!(range_map.get(19), Some(&true));
+	assert_eq!(range_map.get(20), None);
 }
 
 #[test]
@@ -63,12 +63,12 @@ fn insert_inclusive_ranges_b() {
 	range_map.insert_range(10..30, false); // case (B)
 
 	assert_eq!(range_map.range_count(), 2);
-	assert_eq!(range_map.get(&00), Some(&true));
-	assert_eq!(range_map.get(&09), Some(&true));
-	assert_eq!(range_map.get(&10), Some(&false));
-	assert_eq!(range_map.get(&19), Some(&false));
-	assert_eq!(range_map.get(&29), Some(&false));
-	assert_eq!(range_map.get(&30), None);
+	assert_eq!(range_map.get(00), Some(&true));
+	assert_eq!(range_map.get(09), Some(&true));
+	assert_eq!(range_map.get(10), Some(&false));
+	assert_eq!(range_map.get(19), Some(&false));
+	assert_eq!(range_map.get(29), Some(&false));
+	assert_eq!(range_map.get(30), None);
 }
 
 #[test]
@@ -79,13 +79,13 @@ fn insert_inclusive_ranges_ce() {
 	range_map.insert_range(00..20, false); // cases (C) and (E)
 
 	assert_eq!(range_map.range_count(), 2);
-	assert_eq!(range_map.get(&00), Some(&false));
-	assert_eq!(range_map.get(&09), Some(&false));
-	assert_eq!(range_map.get(&10), Some(&false));
-	assert_eq!(range_map.get(&19), Some(&false));
-	assert_eq!(range_map.get(&20), Some(&true));
-	assert_eq!(range_map.get(&29), Some(&true));
-	assert_eq!(range_map.get(&30), None);
+	assert_eq!(range_map.get(00), Some(&false));
+	assert_eq!(range_map.get(09), Some(&false));
+	assert_eq!(range_map.get(10), Some(&false));
+	assert_eq!(range_map.get(19), Some(&false));
+	assert_eq!(range_map.get(20), Some(&true));
+	assert_eq!(range_map.get(29), Some(&true));
+	assert_eq!(range_map.get(30), None);
 }
 
 #[test]
@@ -98,15 +98,15 @@ fn insert_inclusive_ranges_bcd() {
 	range_map.insert_range(10..35, false); // case (B, C, D)
 
 	assert_eq!(range_map.range_count(), 1);
-	assert_eq!(range_map.get(&10), Some(&false));
-	assert_eq!(range_map.get(&14), Some(&false));
-	assert_eq!(range_map.get(&17), Some(&false));
-	assert_eq!(range_map.get(&20), Some(&false));
-	assert_eq!(range_map.get(&24), Some(&false));
-	assert_eq!(range_map.get(&27), Some(&false));
-	assert_eq!(range_map.get(&30), Some(&false));
-	assert_eq!(range_map.get(&34), Some(&false));
-	assert_eq!(range_map.get(&35), None);
+	assert_eq!(range_map.get(10), Some(&false));
+	assert_eq!(range_map.get(14), Some(&false));
+	assert_eq!(range_map.get(17), Some(&false));
+	assert_eq!(range_map.get(20), Some(&false));
+	assert_eq!(range_map.get(24), Some(&false));
+	assert_eq!(range_map.get(27), Some(&false));
+	assert_eq!(range_map.get(30), Some(&false));
+	assert_eq!(range_map.get(34), Some(&false));
+	assert_eq!(range_map.get(35), None);
 }
 
 #[test]

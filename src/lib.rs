@@ -20,30 +20,30 @@ use linear_btree::{
 	}
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ExclusiveRange<T> {
 	start: T,
 	end: T
 }
 
-impl<T> ExclusiveRange<T> {
-	fn contains(&self, t: &T) -> bool where T: PartialOrd {
-		&self.start <= t && t < &self.end
+impl<T: Clone> ExclusiveRange<T> {
+	fn contains(&self, t: T) -> bool where T: PartialOrd {
+		self.start <= t && t < self.end
 	}
 
-	pub fn intersects(&self, other: &Range<T>) -> bool where T: PartialOrd {
+	pub fn intersects(&self, other: Range<T>) -> bool where T: PartialOrd {
 		(other.start < self.end && self.end <= other.end) || (self.start < other.end && other.end <= self.end)
 	}
 
-	pub fn connected_to(&self, other: &Range<T>) -> bool where T: PartialOrd {
-		self.intersects(other) || self.start == other.end || self.end == other.start
+	pub fn connected_to(&self, other: Range<T>) -> bool where T: PartialOrd {
+		self.intersects(other.clone()) || self.start == other.end || self.end == other.start
 	}
 
 	pub fn is_empty(&self) -> bool where T: PartialOrd {
 		self.end <= self.start
 	}
 
-	pub fn without(&self, other: &Range<T>) -> (Option<ExclusiveRange<T>>, Option<ExclusiveRange<T>>) where T: PartialOrd + Clone {
+	pub fn without(&self, other: Range<T>) -> (Option<ExclusiveRange<T>>, Option<ExclusiveRange<T>>) where T: PartialOrd + Clone {
 		let left = if self.start <= other.start {
 			Some(ExclusiveRange {
 				start: self.start.clone(),
@@ -65,7 +65,7 @@ impl<T> ExclusiveRange<T> {
 		(left, right)
 	}
 
-	pub fn add(&mut self, other: &Range<T>) where T: Ord + Clone {
+	pub fn add(&mut self, other: Range<T>) where T: Ord + Clone {
 		self.start = std::cmp::min(other.start.clone(), self.start.clone());
 		self.end = std::cmp::max(other.end.clone(), self.end.clone());
 	}
@@ -108,17 +108,17 @@ impl<T: PartialEq> PartialEq for ExclusiveRange<T> {
 
 impl<T: Eq> Eq for ExclusiveRange<T> { }
 
-pub trait RangeOrd<T: Ord, U> {
-	fn cmp(a: &ExclusiveRange<T>, b: &U) -> Ordering;
+pub trait RangeOrd<T: Clone + Ord, U> {
+	fn cmp(a: &ExclusiveRange<T>, b: U) -> Ordering;
 
-	fn matches(a: &ExclusiveRange<T>, b: &U) -> bool;
+	fn matches(a: &ExclusiveRange<T>, b: U) -> bool;
 }
 
 pub struct RangeMap<K, V> {
 	btree: BTreeMap<ExclusiveRange<K>, V>
 }
 
-impl<K: Ord + Debug, V> RangeMap<K, V> {
+impl<K: Clone + Ord + Debug, V> RangeMap<K, V> {
 	/// Create a new empty map.
 	pub fn new() -> RangeMap<K, V> {
 		RangeMap {
@@ -130,16 +130,16 @@ impl<K: Ord + Debug, V> RangeMap<K, V> {
 		self.btree.len()
 	}
 
-	fn address_of<T, O: RangeOrd<K, T>>(&self, key: &T) -> Result<ItemAddr, ItemAddr> {
+	fn address_of<T: Clone, O: RangeOrd<K, T>>(&self, key: T) -> Result<ItemAddr, ItemAddr> {
 		match self.btree.root_id() {
 			Some(id) => self.address_in::<T, O>(id, key),
 			None => Err(ItemAddr::nowhere())
 		}
 	}
 
-	fn address_in<T, O: RangeOrd<K, T>>(&self, mut id: usize, key: &T) -> Result<ItemAddr, ItemAddr> {
+	fn address_in<T: Clone, O: RangeOrd<K, T>>(&self, mut id: usize, key: T) -> Result<ItemAddr, ItemAddr> {
 		loop {
-			match self.offset_in::<T, O>(id, key) {
+			match self.offset_in::<T, O>(id, key.clone()) {
 				Ok(offset) => {
 					return Ok(ItemAddr::new(id, offset))
 				},
@@ -153,11 +153,11 @@ impl<K: Ord + Debug, V> RangeMap<K, V> {
 		}
 	}
 
-	fn offset_in<T, O: RangeOrd<K, T>>(&self, id: usize, key: &T) -> Result<usize, (usize, Option<usize>)> {
+	fn offset_in<T: Clone, O: RangeOrd<K, T>>(&self, id: usize, key: T) -> Result<usize, (usize, Option<usize>)> {
 		match self.btree.node(id) {
 			Node::Internal(node) => {
 				let branches = node.branches();
-				match binary_search_with::<_, _, _, _, O>(branches, key) {
+				match binary_search_with::<_, _, _, _, O>(branches, key.clone()) {
 					Some(i) => {
 						let b = &branches[i];
 						if O::matches(b.item.key(), key) {
@@ -173,7 +173,7 @@ impl<K: Ord + Debug, V> RangeMap<K, V> {
 			},
 			Node::Leaf(leaf) => {
 				let items = leaf.items();
-				match binary_search_with::<_, _, _, _, O>(items, key) {
+				match binary_search_with::<_, _, _, _, O>(items, key.clone()) {
 					Some(i) => {
 						let item = &items[i];
 						println!("leaf found");
@@ -192,7 +192,7 @@ impl<K: Ord + Debug, V> RangeMap<K, V> {
 		}
 	}
 
-	pub fn get(&self, key: &K) -> Option<&V> {
+	pub fn get(&self, key: K) -> Option<&V> {
 		println!("get");
 		match self.address_of::<_, KeyOrd>(key) {
 			Ok(addr) => {
@@ -209,17 +209,17 @@ impl<K: Ord + Debug, V> RangeMap<K, V> {
 	/// Insert a new key-value binding.
 	pub fn insert_range(&mut self, key: Range<K>, mut value: V) where K: Clone, V: PartialEq + Clone {
 		println!("insert_range");
-		match self.address_of::<_, ConnectedOrd>(&key) {
+		match self.address_of::<_, ConnectedOrd>(key.clone()) {
 			Ok(mut addr) => {
 				println!("found connected range");
 				// some work to do here...
 				loop {
-					if self.btree.item(addr).map(|item| item.key().connected_to(&key)).unwrap_or(false) {
-						match self.btree.item(addr).unwrap().key().without(&key) {
+					if self.btree.item(addr).map(|item| item.key().connected_to(key.clone())).unwrap_or(false) {
+						match self.btree.item(addr).unwrap().key().without(key.clone()) {
 							(Some(left), Some(right)) => { // case (A)
 								println!("(A)");
 								if self.btree.item(addr).unwrap().value() == &value {
-									self.btree.item_mut(addr).unwrap().key_mut().add(&key)
+									self.btree.item_mut(addr).unwrap().key_mut().add(key)
 								} else {
 									let right_value = if !right.is_empty() {
 										let right_value = {
@@ -247,7 +247,7 @@ impl<K: Ord + Debug, V> RangeMap<K, V> {
 							(Some(left), None) => { // case (B)
 								println!("(B)");
 								if self.btree.item(addr).unwrap().value() == &value {
-									self.btree.item_mut(addr).unwrap().key_mut().add(&key)
+									self.btree.item_mut(addr).unwrap().key_mut().add(key)
 								} else {
 									let left_value = {
 										let item = self.btree.item_mut(addr).unwrap();
@@ -306,12 +306,12 @@ impl<K: Ord + Debug, V> RangeMap<K, V> {
 	/// Remove a key.
 	///
 	/// Returns the value that was bound to this key, if any.
-	pub fn remove_range(&mut self, key: &Range<K>) where K: Clone, V: Clone {
-		match self.address_of::<_, IntersectionOrd>(key) {
+	pub fn remove_range(&mut self, key: Range<K>) where K: Clone, V: Clone {
+		match self.address_of::<_, IntersectionOrd>(key.clone()) {
 			Ok(mut addr) => {
 				loop {
-					if self.btree.item(addr).map(|item| item.key().intersects(key)).unwrap_or(false) {
-						match self.btree.item(addr).unwrap().key().without(key) {
+					if self.btree.item(addr).map(|item| item.key().intersects(key.clone())).unwrap_or(false) {
+						match self.btree.item(addr).unwrap().key().without(key.clone()) {
 							(Some(left), Some(right)) => {
 								let right_value = {
 									let item = self.btree.item_mut(addr).unwrap();
@@ -352,53 +352,53 @@ impl<K: Ord + Debug, V> RangeMap<K, V> {
 
 pub struct KeyOrd;
 
-impl<T: Ord + Debug> RangeOrd<T, T> for KeyOrd {
-	fn cmp(a: &ExclusiveRange<T>, b: &T) -> Ordering {
+impl<T: Clone + Ord + Debug> RangeOrd<T, T> for KeyOrd {
+	fn cmp(a: &ExclusiveRange<T>, b: T) -> Ordering {
 		println!("compare {:?} and {:?}", a, b);
-		a.start.cmp(b)
+		a.start.cmp(&b)
 	}
 
-	fn matches(a: &ExclusiveRange<T>, b: &T) -> bool {
+	fn matches(a: &ExclusiveRange<T>, b: T) -> bool {
 		a.contains(b)
 	}
 }
 
 pub struct ConnectedOrd;
 
-impl<T: Ord> RangeOrd<T, Range<T>> for ConnectedOrd {
-	fn cmp(a: &ExclusiveRange<T>, b: &Range<T>) -> Ordering {
+impl<T: Clone + Ord> RangeOrd<T, Range<T>> for ConnectedOrd {
+	fn cmp(a: &ExclusiveRange<T>, b: Range<T>) -> Ordering {
 		match a.start.cmp(&b.end) {
 			Ordering::Equal => Ordering::Less,
 			ordering => ordering
 		}
 	}
 
-	fn matches(a: &ExclusiveRange<T>, b: &Range<T>) -> bool {
+	fn matches(a: &ExclusiveRange<T>, b: Range<T>) -> bool {
 		a.connected_to(b)
 	}
 }
 
 pub struct IntersectionOrd;
 
-impl<T: Ord + Debug> RangeOrd<T, Range<T>> for IntersectionOrd {
-	fn cmp(a: &ExclusiveRange<T>, b: &Range<T>) -> Ordering {
+impl<T: Clone + Ord + Debug> RangeOrd<T, Range<T>> for IntersectionOrd {
+	fn cmp(a: &ExclusiveRange<T>, b: Range<T>) -> Ordering {
 		println!("compare {:?} and {:?} = {:?}", a, b, a.start.cmp(&b.end));
 		a.start.cmp(&b.end)
 	}
 
-	fn matches(a: &ExclusiveRange<T>, b: &Range<T>) -> bool {
+	fn matches(a: &ExclusiveRange<T>, b: Range<T>) -> bool {
 		a.intersects(b)
 	}
 }
 
-pub fn binary_search_with<T: Ord, U, V, I: AsRef<Item<ExclusiveRange<T>, V>>, O: RangeOrd<T, U>>(items: &[I], element: &U) -> Option<usize> {
-	if items.is_empty() || O::cmp(items[0].as_ref().key(), element) == Ordering::Greater {
+pub fn binary_search_with<T: Clone + Ord, U: Clone, V, I: AsRef<Item<ExclusiveRange<T>, V>>, O: RangeOrd<T, U>>(items: &[I], element: U) -> Option<usize> {
+	if items.is_empty() || O::cmp(items[0].as_ref().key(), element.clone()) == Ordering::Greater {
 		None
 	} else {
 		let mut i = 0;
 		let mut j = items.len() - 1;
 
-		if O::cmp(items[j].as_ref().key(), element) != Ordering::Greater {
+		if O::cmp(items[j].as_ref().key(), element.clone()) != Ordering::Greater {
 			return Some(j)
 		}
 
@@ -410,7 +410,7 @@ pub fn binary_search_with<T: Ord, U, V, I: AsRef<Item<ExclusiveRange<T>, V>>, O:
 		while j-i > 1 {
 			let k = (i + j) / 2;
 
-			if O::cmp(items[k].as_ref().key(), element) == Ordering::Greater {
+			if O::cmp(items[k].as_ref().key(), element.clone()) == Ordering::Greater {
 				j = k;
 			} else {
 				i = k;
