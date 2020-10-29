@@ -210,10 +210,127 @@ macro_rules! float_bound_partial_ord {
 float_bound_partial_ord!(f32);
 float_bound_partial_ord!(f64);
 
+fn min_start_bound<'a, T: BoundPartialOrd>(a: Bound<&'a T>, b: Bound<&'a T>) -> Bound<&'a T> {
+	match T::bound_partial_cmp((a, BoundDirection::Start), (b, BoundDirection::Start)) {
+		Some(Ordering::Less) => a,
+		_ => b
+	}
+}
+
+fn max_end_bound<'a, T: BoundPartialOrd>(a: Bound<&'a T>, b: Bound<&'a T>) -> Bound<&'a T> {
+	match T::bound_partial_cmp((a, BoundDirection::End), (b, BoundDirection::End)) {
+		Some(Ordering::Greater) => a,
+		_ => b
+	}
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Range<T> {
 	start: Bound<T>,
 	end: Bound<T>
+}
+
+impl<T> Range<T> {
+	pub fn add<S>(&mut self, other: &S) where T: Clone + BoundPartialOrd, S: RangeBounds<T> {
+		self.start = min_start_bound(self.start_bound(), other.start_bound()).cloned();
+		self.end = max_end_bound(self.end_bound(), other.end_bound()).cloned();
+	}
+}
+
+impl<T: Clone> Range<&T> {
+	pub fn cloned(self) -> Range<T> {
+		Range {
+			start: self.start.cloned(),
+			end: self.end.cloned()
+		}
+	}
+}
+
+impl<T> RangeBounds<T> for Range<T> {
+	fn start_bound(&self) -> Bound<&T> {
+		match &self.start {
+			Bound::Included(v) => Bound::Included(v),
+			Bound::Excluded(v) => Bound::Excluded(v),
+			Bound::Unbounded => Bound::Unbounded
+		}
+	}
+
+	fn end_bound(&self) -> Bound<&T> {
+		match &self.start {
+			Bound::Included(v) => Bound::Included(v),
+			Bound::Excluded(v) => Bound::Excluded(v),
+			Bound::Unbounded => Bound::Unbounded
+		}
+	}
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum RangeOrdering {
+	Before,
+	ConnectedBefore,
+	Intersecting,
+	ConnectedAfter,
+	After
+}
+
+impl RangeOrdering {
+	pub fn is_before(&self, disconnected: bool) -> bool {
+		match self {
+			RangeOrdering::Before => true,
+			RangeOrdering::ConnectedBefore => !disconnected,
+			_ => false
+		}
+	}
+
+	pub fn is_after(&self, disconnected: bool) -> bool {
+		match self {
+			RangeOrdering::After => true,
+			RangeOrdering::ConnectedAfter => !disconnected,
+			_ => false
+		}
+	}
+
+	pub fn matches(&self, disconnected: bool) -> bool {
+		match self {
+			RangeOrdering::ConnectedBefore => !disconnected,
+			RangeOrdering::Intersecting => true,
+			RangeOrdering::ConnectedAfter => !disconnected,
+			_ => false
+		}
+	}
+}
+
+pub trait RangeOrd<T = Self>: Sized {
+	fn range_cmp(a: &Range<Self>, b: &T) -> RangeOrdering;
+}
+
+impl<U, T: BoundPartialOrd> RangeOrd<Range<U>> for T {
+	fn range_cmp(a: &Range<Self>, b: &Range<U>) -> RangeOrdering {
+		panic!("TODO")
+	}
+}
+
+impl<U, T: BoundPartialOrd<U>> PartialEq<std::ops::Range<U>> for Range<T> {
+	fn eq(&self, other: &std::ops::Range<U>) -> bool {
+		T::bound_partial_cmp((self.start_bound(), BoundDirection::Start), (other.start_bound(), BoundDirection::Start)) == Some(Ordering::Equal) &&
+		T::bound_partial_cmp((self.end_bound(), BoundDirection::End), (other.end_bound(), BoundDirection::End)) == Some(Ordering::Equal)
+	}
+}
+
+impl<U, T: BoundPartialOrd<U>> PartialOrd<std::ops::Range<U>> for Range<T> {
+	fn partial_cmp(&self, other: &std::ops::Range<U>) -> Option<Ordering> {
+		//T::bound_partial_cmp((self.start_bound(), BoundDirection::Start), (other.start_bound(), BoundDirection::Start))
+		None
+	}
+}
+
+impl<T: Clone> From<T> for Range<T> {
+	fn from(t: T) -> Range<T> {
+		Range {
+			start: Bound::Included(t.clone()),
+			end: Bound::Included(t)
+		}
+	}
 }
 
 pub trait RangeExt<T> {
@@ -225,8 +342,6 @@ pub trait RangeExt<T> {
 
 	// Output ranges are never empty.
 	fn without<'a, S>(&'a self, other: &'a S) -> (Option<Range<&'a T>>, Option<Range<&'a T>>) where T: BoundPartialOrd, S: RangeBounds<T>;
-
-	// fn add<S>(&mut self, other: &S) where T: PartialOrd + Clone, S: RangeBounds<T>;
 }
 
 #[inline(always)]
@@ -251,7 +366,7 @@ fn are_conneted_bounds<T, U>(end: Bound<&T>, start: Bound<&U>) -> bool where T: 
 	}
 }
 
-impl<T: Clone, R: RangeBounds<T>> RangeExt<T> for R {
+impl<T, R: RangeBounds<T>> RangeExt<T> for R {
 	fn is_empty(&self) -> bool where T: BoundPartialOrd {
 		is_range_empty(self.start_bound(), self.end_bound())
 	}
@@ -581,9 +696,3 @@ mod tests {
 // }
 
 // impl<T: Eq> Eq for ExclusiveRange<T> { }
-
-// pub trait RangeOrd<T: Clone + Ord, U> {
-// 	fn cmp(a: &ExclusiveRange<T>, b: U) -> Ordering;
-
-// 	fn matches(a: &ExclusiveRange<T>, b: U) -> bool;
-// }
