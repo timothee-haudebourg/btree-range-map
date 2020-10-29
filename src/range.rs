@@ -11,6 +11,77 @@ use std::{
 	}
 };
 
+// `a...b`
+pub struct RangeFromExcludedTo<T> {
+	pub start: T,
+	pub end: T
+}
+
+impl<T> RangeFromExcludedTo<T> {
+	pub const fn new(start: T, end: T) -> RangeFromExcludedTo<T> {
+		RangeFromExcludedTo {
+			start, end
+		}
+	}
+}
+
+impl<T> RangeBounds<T> for RangeFromExcludedTo<T> {
+	fn start_bound(&self) -> Bound<&T> {
+		Bound::Excluded(&self.start)
+	}
+
+	fn end_bound(&self) -> Bound<&T> {
+		Bound::Excluded(&self.end)
+	}
+}
+
+// `a...=b`
+pub struct RangeFromExcludedToIncluded<T> {
+	pub start: T,
+	pub end: T
+}
+
+impl<T> RangeFromExcludedToIncluded<T> {
+	pub const fn new(start: T, end: T) -> RangeFromExcludedToIncluded<T> {
+		RangeFromExcludedToIncluded {
+			start, end
+		}
+	}
+}
+
+impl<T> RangeBounds<T> for RangeFromExcludedToIncluded<T> {
+	fn start_bound(&self) -> Bound<&T> {
+		Bound::Excluded(&self.start)
+	}
+
+	fn end_bound(&self) -> Bound<&T> {
+		Bound::Included(&self.end)
+	}
+}
+
+// `a...`
+pub struct RangeFromExcluded<T> {
+	pub start: T
+}
+
+impl<T> RangeFromExcluded<T> {
+	pub const fn new(start: T) -> RangeFromExcluded<T> {
+		RangeFromExcluded {
+			start
+		}
+	}
+}
+
+impl<T> RangeBounds<T> for RangeFromExcluded<T> {
+	fn start_bound(&self) -> Bound<&T> {
+		Bound::Excluded(&self.start)
+	}
+
+	fn end_bound(&self) -> Bound<&T> {
+		Bound::Unbounded
+	}
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum BoundDirection {
 	Start,
@@ -114,13 +185,17 @@ macro_rules! float_bound_partial_ord {
 						Some(Ordering::Greater) => Some(Ordering::Greater),
 						None => None
 					},
-					(Bound::Excluded(a), Bound::Excluded(b)) => a.partial_cmp(b),
+					(Bound::Excluded(a), Bound::Excluded(b)) => match a.partial_cmp(b) {
+						Some(Ordering::Equal) => Some(b_direction.cmp(&a_direction)),
+						Some(ordering) => Some(ordering),
+						None => None
+					},
 					(Bound::Excluded(_), Bound::Unbounded) => if b_direction == BoundDirection::Start {
 						Some(Ordering::Greater)
 					} else {
 						Some(Ordering::Less)
 					},
-					(Bound::Unbounded, Bound::Unbounded) => Some(Ordering::Equal),
+					(Bound::Unbounded, Bound::Unbounded) => Some(a_direction.cmp(&b_direction)),
 					(Bound::Unbounded, _) => if a_direction == BoundDirection::Start {
 						Some(Ordering::Less)
 					} else {
@@ -222,168 +297,251 @@ impl<T: Clone, R: RangeBounds<T>> RangeExt<T> for R {
 mod tests {
 	use super::*;
 
+	macro_rules! make_bound {
+		([= $v:literal ..]) => { (Bound::Included(&$v), BoundDirection::Start) };
+		([$v:literal ..]) => { (Bound::Excluded(&$v), BoundDirection::Start) };
+		([~ ..]) => { (Bound::Unbounded, BoundDirection::Start) };
+		([..= $v:literal]) => { (Bound::Included(&$v), BoundDirection::End) };
+		([.. $v:literal]) => { (Bound::Excluded(&$v), BoundDirection::End) };
+		([.. ~]) => { (Bound::Unbounded, BoundDirection::End) }
+	}
+
+	macro_rules! test_bound_cmp {
+		(@assert $ty:ty, $a:tt, $b:tt, $expected:ident) => {
+			assert_eq!(<$ty as BoundPartialOrd>::bound_partial_cmp(make_bound!($a), make_bound!($b)), Some(Ordering::$expected));
+		};
+		($ty:ty, $a:tt < $b:tt) => {
+			test_bound_cmp!(@assert $ty, $a, $b, Less)
+		};
+		($ty:ty, $a:tt == $b:tt) => {
+			test_bound_cmp!(@assert $ty, $a, $b, Equal)
+		};
+		($ty:ty, $a:tt > $b:tt) => {
+			test_bound_cmp!(@assert $ty, $a, $b, Greater)
+		}
+	}
+
 	#[test]
 	fn integer_bound_partial_less() {
-		assert_eq!( // =0.. < =1..
-			BoundPartialOrd::bound_partial_cmp(
-				(Bound::Included(&0), BoundDirection::Start),
-				(Bound::Included(&1), BoundDirection::Start)
-			),
-			Some(Ordering::Less)
-		);
-		assert_eq!( // =0.. < 0..
-			BoundPartialOrd::bound_partial_cmp(
-				(Bound::Included(&0), BoundDirection::Start),
-				(Bound::Excluded(&0), BoundDirection::Start)
-			),
-			Some(Ordering::Less)
-		);
-		assert_eq!( // =0.. < ..=1
-			BoundPartialOrd::bound_partial_cmp(
-				(Bound::Included(&0), BoundDirection::Start),
-				(Bound::Included(&1), BoundDirection::End)
-			),
-			Some(Ordering::Less)
-		);
-		assert_eq!( // =0.. < ..2
-			BoundPartialOrd::bound_partial_cmp(
-				(Bound::Included(&0), BoundDirection::Start),
-				(Bound::Excluded(&2), BoundDirection::End)
-			),
-			Some(Ordering::Less)
-		);
-		assert_eq!( // =0.. < ..-
-			BoundPartialOrd::bound_partial_cmp(
-				(Bound::Included(&0), BoundDirection::Start),
-				(Bound::Unbounded, BoundDirection::End)
-			),
-			Some(Ordering::Less)
-		);
-		assert_eq!( // 0.. < =2..
-			BoundPartialOrd::bound_partial_cmp(
-				(Bound::Excluded(&0), BoundDirection::Start),
-				(Bound::Included(&2), BoundDirection::Start)
-			),
-			Some(Ordering::Less)
-		);
-		assert_eq!( // 0.. < 1..
-			BoundPartialOrd::bound_partial_cmp(
-				(Bound::Excluded(&0), BoundDirection::Start),
-				(Bound::Excluded(&1), BoundDirection::Start)
-			),
-			Some(Ordering::Less)
-		);
-		assert_eq!( // 0.. < ..=2
-			BoundPartialOrd::bound_partial_cmp(
-				(Bound::Excluded(&0), BoundDirection::Start),
-				(Bound::Included(&2), BoundDirection::End)
-			),
-			Some(Ordering::Less)
-		);
-		assert_eq!( // 0.. < ..3
-			BoundPartialOrd::bound_partial_cmp(
-				(Bound::Excluded(&0), BoundDirection::Start),
-				(Bound::Excluded(&3), BoundDirection::End)
-			),
-			Some(Ordering::Less)
-		);
-		assert_eq!( // 0.. < ..-
-			BoundPartialOrd::bound_partial_cmp(
-				(Bound::Excluded(&0), BoundDirection::Start),
-				(Bound::Unbounded, BoundDirection::End)
-			),
-			Some(Ordering::Less)
-		);
-		assert_eq!( // -.. < =0..
-			<i32 as BoundPartialOrd>::bound_partial_cmp(
-				(Bound::Unbounded, BoundDirection::Start),
-				(Bound::Included(&0), BoundDirection::Start)
-			),
-			Some(Ordering::Less)
-		);
-		assert_eq!( // -.. < 0..
-			<i32 as BoundPartialOrd>::bound_partial_cmp(
-				(Bound::Unbounded, BoundDirection::Start),
-				(Bound::Excluded(&0), BoundDirection::Start)
-			),
-			Some(Ordering::Less)
-		);
-		assert_eq!( // -.. < ..=0
-			<i32 as BoundPartialOrd>::bound_partial_cmp(
-				(Bound::Unbounded, BoundDirection::Start),
-				(Bound::Included(&0), BoundDirection::End)
-			),
-			Some(Ordering::Less)
-		);
-		assert_eq!( // -.. < ..0
-			<i32 as BoundPartialOrd>::bound_partial_cmp(
-				(Bound::Unbounded, BoundDirection::Start),
-				(Bound::Excluded(&0), BoundDirection::End)
-			),
-			Some(Ordering::Less)
-		);
-		assert_eq!( // -.. < ..-
-			<i32 as BoundPartialOrd>::bound_partial_cmp(
-				(Bound::Unbounded, BoundDirection::Start),
-				(Bound::Unbounded, BoundDirection::End)
-			),
-			Some(Ordering::Less)
-		);
+		test_bound_cmp!(i32, [=0..] < [=1..]);
+		test_bound_cmp!(i32, [=0..] < [0..]);
+		test_bound_cmp!(i32, [=0..] < [..=1]);
+		test_bound_cmp!(i32, [=0..] < [..2]);
+		test_bound_cmp!(i32, [=0..] < [..~]);
+
+		test_bound_cmp!(i32, [0..] < [=2..]);
+		test_bound_cmp!(i32, [0..] < [1..]);
+		test_bound_cmp!(i32, [0..] < [..=2]);
+		test_bound_cmp!(i32, [0..] < [..3]);
+		test_bound_cmp!(i32, [0..] < [..~]);
+
+		test_bound_cmp!(i32, [~..] < [=0..]);
+		test_bound_cmp!(i32, [~..] < [..=0]);
+		test_bound_cmp!(i32, [~..] < [..0]);
+		test_bound_cmp!(i32, [~..] < [..~]);
+
+		test_bound_cmp!(i32, [..=0] < [=1..]);
+		test_bound_cmp!(i32, [..=0] < [0..]);
+		test_bound_cmp!(i32, [..=0] < [..=1]);
+		test_bound_cmp!(i32, [..=0] < [..2]);
+		test_bound_cmp!(i32, [..=0] < [..~]);
+
+		test_bound_cmp!(i32, [..1] < [=1..]);
+		test_bound_cmp!(i32, [..1] < [0..]);
+		test_bound_cmp!(i32, [..1] < [..=1]);
+		test_bound_cmp!(i32, [..1] < [..2]);
+		test_bound_cmp!(i32, [..0] < [..~]);
 	}
 
 	#[test]
 	fn integer_bound_partial_eq() {
-		assert_eq!( // =0.. == =0..
-			BoundPartialOrd::bound_partial_cmp(
-				(Bound::Included(&0), BoundDirection::Start),
-				(Bound::Included(&0), BoundDirection::Start)
-			),
-			Some(Ordering::Equal)
-		);
-		assert_eq!( // =1.. == 0..
-			BoundPartialOrd::bound_partial_cmp(
-				(Bound::Included(&1), BoundDirection::Start),
-				(Bound::Excluded(&0), BoundDirection::Start)
-			),
-			Some(Ordering::Equal)
-		);
-		assert_eq!( // =0.. == ..=0
-			BoundPartialOrd::bound_partial_cmp(
-				(Bound::Included(&0), BoundDirection::Start),
-				(Bound::Included(&0), BoundDirection::End)
-			),
-			Some(Ordering::Equal)
-		);
-		assert_eq!( // =0.. == ..1
-			BoundPartialOrd::bound_partial_cmp(
-				(Bound::Included(&0), BoundDirection::Start),
-				(Bound::Excluded(&1), BoundDirection::End)
-			),
-			Some(Ordering::Equal)
-		);
+		test_bound_cmp!(i32, [=0..] == [=0..]);
+		test_bound_cmp!(i32, [=1..] == [0..]);
+		test_bound_cmp!(i32, [=0..] == [..=0]);
+		test_bound_cmp!(i32, [=0..] == [..1]);
+
+		test_bound_cmp!(i32, [0..] == [=1..]);
+		test_bound_cmp!(i32, [0..] == [0..]);
+		test_bound_cmp!(i32, [0..] == [..=1]);
+		test_bound_cmp!(i32, [0..] == [..2]);
+
+		test_bound_cmp!(i32, [~..] == [~..]);
+
+		test_bound_cmp!(i32, [..=0] == [=0..]);
+		test_bound_cmp!(i32, [..=1] == [0..]);
+		test_bound_cmp!(i32, [..=0] == [..=0]);
+		test_bound_cmp!(i32, [..=0] == [..1]);
+
+		test_bound_cmp!(i32, [..1] == [=0..]);
+		test_bound_cmp!(i32, [..2] == [0..]);
+		test_bound_cmp!(i32, [..1] == [..=0]);
+		test_bound_cmp!(i32, [..0] == [..0]);
+
+		test_bound_cmp!(i32, [..~] == [..~]);
 	}
 
 	#[test]
-	fn intersection() {
+	fn integer_bound_partial_greater() {
+		test_bound_cmp!(i32, [=1..] > [=0..]);
+		test_bound_cmp!(i32, [0..] > [=0..]);
+		test_bound_cmp!(i32, [..=1] > [=0..]);
+		test_bound_cmp!(i32, [..2] > [=0..]);
+		test_bound_cmp!(i32, [..~] > [=0..]);
+
+		test_bound_cmp!(i32, [=2..] > [0..]);
+		test_bound_cmp!(i32, [1..] > [0..]);
+		test_bound_cmp!(i32, [..=2] > [0..]);
+		test_bound_cmp!(i32, [..3] > [0..]);
+		test_bound_cmp!(i32, [..~] > [0..]);
+
+		test_bound_cmp!(i32, [=0..] > [~..]);
+		test_bound_cmp!(i32, [..=0] > [~..]);
+		test_bound_cmp!(i32, [..0] > [~..]);
+		test_bound_cmp!(i32, [..~] > [~..]);
+
+		test_bound_cmp!(i32, [=1..] > [..=0]);
+		test_bound_cmp!(i32, [0..] > [..=0]);
+		test_bound_cmp!(i32, [..=1] > [..=0]);
+		test_bound_cmp!(i32, [..2] > [..=0]);
+		test_bound_cmp!(i32, [..~] > [..=0]);
+
+		test_bound_cmp!(i32, [=1..] > [..1]);
+		test_bound_cmp!(i32, [0..] > [..1]);
+		test_bound_cmp!(i32, [..=1] > [..1]);
+		test_bound_cmp!(i32, [..2] > [..1]);
+		test_bound_cmp!(i32, [..~] > [..0]);
+	}
+	
+	#[test]
+	fn float_bound_partial_less() {
+		test_bound_cmp!(f32, [=0.0..] < [=1.0..]);
+		test_bound_cmp!(f32, [=0.0..] < [0.0..]);
+		test_bound_cmp!(f32, [=0.0..] < [..=1.0]);
+		test_bound_cmp!(f32, [=0.0..] < [..2.0]);
+		test_bound_cmp!(f32, [=0.0..] < [..~]);
+
+		test_bound_cmp!(f32, [0.0..] < [=2.0..]);
+		test_bound_cmp!(f32, [0.0..] < [1.0..]);
+		test_bound_cmp!(f32, [0.0..] < [..1.0]); // different from the int behavior
+		test_bound_cmp!(f32, [0.0..] < [..=2.0]);
+		test_bound_cmp!(f32, [0.0..] < [..3.0]);
+		test_bound_cmp!(f32, [0.0..] < [..~]);
+
+		test_bound_cmp!(f32, [~..] < [=0.0..]);
+		test_bound_cmp!(f32, [~..] < [..=0.0]);
+		test_bound_cmp!(f32, [~..] < [..0.0]);
+		test_bound_cmp!(f32, [~..] < [..~]);
+
+		test_bound_cmp!(f32, [..=0.0] < [=1.0..]);
+		test_bound_cmp!(f32, [..=0.0] < [0.0..]);
+		test_bound_cmp!(f32, [..=0.0] < [..=1.0]);
+		test_bound_cmp!(f32, [..=0.0] < [..2.0]);
+		test_bound_cmp!(f32, [..=0.0] < [..~]);
+
+		test_bound_cmp!(f32, [..1.0] < [=1.0..]);
+		test_bound_cmp!(f32, [..1.0] < [1.0..]);
+		test_bound_cmp!(f32, [..1.0] < [..=1.0]);
+		test_bound_cmp!(f32, [..1.0] < [..2.0]);
+		test_bound_cmp!(f32, [..0.0] < [..~]);
+	}
+
+	#[test]
+	fn float_bound_partial_eq() {
+		test_bound_cmp!(f32, [=0.0..] == [=0.0..]);
+		test_bound_cmp!(f32, [=1.0..] > [0.0..]); // different from the int behavior
+		test_bound_cmp!(f32, [=0.0..] == [..=0.0]);
+		test_bound_cmp!(f32, [=0.0..] < [..1.0]); // different from the int behavior
+
+		test_bound_cmp!(f32, [0.0..] < [=1.0..]); // different from the int behavior
+		test_bound_cmp!(f32, [0.0..] == [0.0..]);
+		test_bound_cmp!(f32, [0.0..] < [..=1.0]); // different from the int behavior
+		test_bound_cmp!(f32, [0.0..] < [..2.0]); // different from the int behavior
+
+		test_bound_cmp!(f32, [~..] == [~..]);
+
+		test_bound_cmp!(f32, [..=0.0] == [=0.0..]);
+		test_bound_cmp!(f32, [..=1.0] > [0.0..]); // different from the int behavior
+		test_bound_cmp!(f32, [..=0.0] == [..=0.0]);
+		test_bound_cmp!(f32, [..=0.0] < [..1.0]); // different from the int behavior
+
+		test_bound_cmp!(f32, [..1.0] > [=0.0..]); // different from the int behavior
+		test_bound_cmp!(f32, [..2.0] > [0.0..]); // different from the int behavior
+		test_bound_cmp!(f32, [..1.0] > [..=0.0]); // different from the int behavior
+		test_bound_cmp!(f32, [..0.0] == [..0.0]);
+
+		test_bound_cmp!(f32, [..~] == [..~]);
+	}
+
+	#[test]
+	fn float_bound_partial_greater() {
+		test_bound_cmp!(f32, [=1.0..] > [=0.0..]);
+		test_bound_cmp!(f32, [0.0..] > [=0.0..]);
+		test_bound_cmp!(f32, [..=1.0] > [=0.0..]);
+		test_bound_cmp!(f32, [..2.0] > [=0.0..]);
+		test_bound_cmp!(f32, [..~] > [=0.0..]);
+
+		test_bound_cmp!(f32, [=2.0..] > [0.0..]);
+		test_bound_cmp!(f32, [1.0..] > [0.0..]);
+		test_bound_cmp!(f32, [..1.0] > [0.0..]); // different from the int behavior
+		test_bound_cmp!(f32, [..=2.0] > [0.0..]);
+		test_bound_cmp!(f32, [..3.0] > [0.0..]);
+		test_bound_cmp!(f32, [..~] > [0.0..]);
+
+		test_bound_cmp!(f32, [=0.0..] > [~..]);
+		test_bound_cmp!(f32, [..=0.0] > [~..]);
+		test_bound_cmp!(f32, [..0.0] > [~..]);
+		test_bound_cmp!(f32, [..~] > [~..]);
+
+		test_bound_cmp!(f32, [=1.0..] > [..=0.0]);
+		test_bound_cmp!(f32, [0.0..] > [..=0.0]);
+		test_bound_cmp!(f32, [..=1.0] > [..=0.0]);
+		test_bound_cmp!(f32, [..2.0] > [..=0.0]);
+		test_bound_cmp!(f32, [..~] > [..=0.0]);
+
+		test_bound_cmp!(f32, [=1.0..] > [..1.0]);
+		test_bound_cmp!(f32, [1.0..] > [..1.0]);
+		test_bound_cmp!(f32, [..=1.0] > [..1.0]);
+		test_bound_cmp!(f32, [..2.0] > [..1.0]);
+		test_bound_cmp!(f32, [..~] > [..0.0]);
+	}
+
+	#[test]
+	fn int_intersection() {
 		assert!((0..10).intersects(&(5..100)));
 	}
 
 	// Intersecting ranges are connected.
 	#[test]
-	fn connected_intersection() {
+	fn int_connected_intersection() {
 		assert!((0..10).connected_to(&(5..100)));
 	}
 
 	#[test]
-	fn connected() {
+	fn int_connected() {
 		assert!((0..10).connected_to(&(10..20)));
 		assert!((10..20).connected_to(&(0..10)));
+		assert!((0..=10).connected_to(&(RangeFromExcludedTo::new(10, 20))));
 	}
 
 	#[test]
-	fn disconnected() {
+	fn int_disconnected() {
 		assert!(!(0..10).connected_to(&(11..20)));
 		assert!(!(11..20).connected_to(&(0..10)));
+		assert!(!(0..10).connected_to(&(RangeFromExcludedTo::new(10, 20))));
+	}
+
+	#[test]
+	fn float_connected() {
+		assert!((0.0..10.0).connected_to(&(10.0..20.0)));
+		assert!((0.0..=10.0).connected_to(&(RangeFromExcludedTo::new(10.0, 20.0))));
+	}
+
+	#[test]
+	fn float_disconnected() {
+		assert!(!(0.0..10.0).connected_to(&(RangeFromExcludedTo::new(10.0, 20.0))));
+		assert!(!(..10.0).connected_to(&(RangeFromExcludedTo::new(10.0, 20.0))));
+		assert!(!(0.0..10.0).connected_to(&(RangeFromExcluded::new(10.0))));
+		assert!(!(..10.0).connected_to(&(RangeFromExcluded::new(10.0))));
 	}
 }
 
