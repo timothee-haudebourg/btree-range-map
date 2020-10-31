@@ -1,7 +1,5 @@
 use std::{
-	fmt::Debug,
-	cmp::Ordering,
-	ops::RangeBounds
+	fmt::Debug
 };
 use linear_btree::{
 	map::{
@@ -17,9 +15,10 @@ use linear_btree::{
 };
 use crate::{
 	Range,
-	RangeOrd,
 	RangeExt,
-	BoundPartialOrd
+	RangeOrdering,
+	BoundPartialOrd,
+	RangePartialOrd
 };
 
 pub struct RangeMap<K, V> {
@@ -38,14 +37,14 @@ impl<K: Clone + Ord + Debug, V> RangeMap<K, V> {
 		self.btree.len()
 	}
 
-	fn address_of<T>(&self, key: &T, disconnected: bool) -> Result<ItemAddr, ItemAddr> where K: RangeOrd<T> {
+	fn address_of<T>(&self, key: &T, disconnected: bool) -> Result<ItemAddr, ItemAddr> where T: RangePartialOrd<K> {
 		match self.btree.root_id() {
 			Some(id) => self.address_in(id, key, disconnected),
 			None => Err(ItemAddr::nowhere())
 		}
 	}
 
-	fn address_in<T>(&self, mut id: usize, key: &T, disconnected: bool) -> Result<ItemAddr, ItemAddr> where K: RangeOrd<T> {
+	fn address_in<T>(&self, mut id: usize, key: &T, disconnected: bool) -> Result<ItemAddr, ItemAddr> where T: RangePartialOrd<K> {
 		loop {
 			match self.offset_in(id, key, disconnected) {
 				Ok(offset) => {
@@ -61,14 +60,14 @@ impl<K: Clone + Ord + Debug, V> RangeMap<K, V> {
 		}
 	}
 
-	fn offset_in<T>(&self, id: usize, key: &T, disconnected: bool) -> Result<usize, (usize, Option<usize>)> where K: RangeOrd<T> {
+	fn offset_in<T>(&self, id: usize, key: &T, disconnected: bool) -> Result<usize, (usize, Option<usize>)> where T: RangePartialOrd<K> {
 		match self.btree.node(id) {
 			Node::Internal(node) => {
 				let branches = node.branches();
 				match binary_search_with(branches, key, disconnected) {
 					Some(i) => {
 						let b = &branches[i];
-						if K::range_cmp(b.item.key(), key).matches(disconnected) {
+						if key.range_partial_cmp(b.item.key()).unwrap_or(RangeOrdering::After(false)).matches(disconnected) {
 							Ok(i)
 						} else {
 							Err((i+1, Some(b.child)))
@@ -85,7 +84,7 @@ impl<K: Clone + Ord + Debug, V> RangeMap<K, V> {
 					Some(i) => {
 						let item = &items[i];
 						println!("leaf found");
-						if K::range_cmp(item.key(), key).matches(disconnected) {
+						if key.range_partial_cmp(item.key()).unwrap_or(RangeOrdering::After(false)).matches(disconnected) {
 							Ok(i)
 						} else {
 							Err((i+1, None))
@@ -100,7 +99,7 @@ impl<K: Clone + Ord + Debug, V> RangeMap<K, V> {
 		}
 	}
 
-	pub fn get(&self, key: K) -> Option<&V> where K: BoundPartialOrd + RangeOrd {
+	pub fn get(&self, key: K) -> Option<&V> where K: RangePartialOrd {
 		println!("get");
 		match self.address_of(&key, true) {
 			Ok(addr) => {
@@ -205,7 +204,8 @@ impl<K: Clone + Ord + Debug, V> RangeMap<K, V> {
 	/// Remove a key.
 	///
 	/// Returns the value that was bound to this key, if any.
-	pub fn remove_range(&mut self, key: Range<K>) where K: BoundPartialOrd, V: Clone {
+	pub fn remove_range<R: Into<Range<K>>>(&mut self, key: R) where K: BoundPartialOrd, V: Clone {
+		let key = key.into();
 		match self.address_of(&key, true) {
 			Ok(mut addr) => {
 				loop {
@@ -254,14 +254,14 @@ impl<K: Clone + Ord + Debug, V> RangeMap<K, V> {
 	}
 }
 
-pub fn binary_search_with<T, U, V, I: AsRef<Item<Range<T>, V>>>(items: &[I], element: &U, disconnected: bool) -> Option<usize> where T: RangeOrd<U> {
-	if items.is_empty() || T::range_cmp(items[0].as_ref().key(), element).is_after(disconnected) {
+pub fn binary_search_with<T, U, V, I: AsRef<Item<Range<T>, V>>>(items: &[I], element: &U, disconnected: bool) -> Option<usize> where U: RangePartialOrd<T> {
+	if items.is_empty() || element.range_partial_cmp(items[0].as_ref().key()).unwrap_or(RangeOrdering::Before(false)).is_before(disconnected) {
 		None
 	} else {
 		let mut i = 0;
 		let mut j = items.len() - 1;
 
-		if !T::range_cmp(items[j].as_ref().key(), element).is_after(disconnected) { 
+		if !element.range_partial_cmp(items[j].as_ref().key()).unwrap_or(RangeOrdering::After(false)).is_before(disconnected) { 
 			return Some(j)
 		}
 
@@ -273,10 +273,14 @@ pub fn binary_search_with<T, U, V, I: AsRef<Item<Range<T>, V>>>(items: &[I], ele
 		while j-i > 1 {
 			let k = (i + j) / 2;
 
-			if T::range_cmp(items[k].as_ref().key(), element).is_after(disconnected) {
-				j = k;
+			if let Some(ord) = element.range_partial_cmp(items[k].as_ref().key()) {
+				if ord.is_before(disconnected) {
+					j = k;
+				} else {
+					i = k;
+				}
 			} else {
-				i = k;
+				return None // FIXME: that's bad. Maybe we should expect a total order.
 			}
 		}
 

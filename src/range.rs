@@ -87,53 +87,85 @@ pub enum BoundDirection {
 	Start,
 	End
 }
-
-pub trait BoundPartialOrd<T = Self> {
-	fn bound_partial_cmp(a: (Bound<&Self>, BoundDirection), b: (Bound<&T>, BoundDirection)) -> Option<Ordering>;
+pub struct DirectedBound<T> {
+	value: Bound<T>,
+	direction: BoundDirection
 }
 
-pub trait IncludedBound: Sized {
-	fn included_bound(bound: Bound<&Self>, direction: BoundDirection) -> Option<Self>;
-}
+impl<T> DirectedBound<T> {
+	pub fn new(bound: Bound<T>, direction: BoundDirection) -> DirectedBound<T> {
+		DirectedBound {
+			value: bound,
+			direction
+		}
+	}
 
-impl<U: IncludedBound, T: IncludedBound + PartialOrd<U>> BoundPartialOrd<U> for T {
-	fn bound_partial_cmp((a, a_direction): (Bound<&T>, BoundDirection), (b, b_direction): (Bound<&U>, BoundDirection)) -> Option<Ordering> {
-		match (T::included_bound(a, a_direction), U::included_bound(b, b_direction)) {
-			(Some(a), Some(b)) => a.partial_cmp(&b),
-			(None, None) => Some(a_direction.cmp(&b_direction)),
-			(Some(_), None) => match a_direction.cmp(&b_direction) {
-				Ordering::Equal if a_direction == BoundDirection::Start => Some(Ordering::Greater),
-				Ordering::Equal => Some(Ordering::Less),
-				ordering => Some(ordering)
+	pub fn start(bound: Bound<T>) -> DirectedBound<T> {
+		DirectedBound {
+			value: bound,
+			direction: BoundDirection::Start
+		}
+	}
+
+	pub fn end(bound: Bound<T>) -> DirectedBound<T> {
+		DirectedBound {
+			value: bound,
+			direction: BoundDirection::End
+		}
+	}
+
+	pub fn as_ref(&self) -> DirectedBound<&T> {
+		DirectedBound {
+			value: match &self.value {
+				Bound::Included(b) => Bound::Included(b),
+				Bound::Excluded(b) => Bound::Excluded(b),
+				Bound::Unbounded => Bound::Unbounded
 			},
-			(None, Some(_)) => match a_direction.cmp(&b_direction) {
-				Ordering::Equal if a_direction == BoundDirection::Start => Some(Ordering::Less),
-				Ordering::Equal => Some(Ordering::Greater),
-				ordering => Some(ordering)
-			}
+			direction: self.direction
 		}
 	}
 }
 
-macro_rules! int_included_bound {
+macro_rules! impl_int_bound_partial_order {
 	($ty:ident) => {
-		impl IncludedBound for $ty {
-			fn included_bound(bound: Bound<&Self>, direction: BoundDirection) -> Option<Self> {
-				match bound {
-					Bound::Included(a) => Some(*a),
-					Bound::Excluded(a) => {
-						match direction {
-							BoundDirection::Start if *a == std::$ty::MAX => None,
-							BoundDirection::Start => Some(a+1),
-							BoundDirection::End if *a == std::$ty::MIN => None,
-							BoundDirection::End => Some(a-1)
-						}
+		impl<T: PartialOrd<$ty>> BoundPartialOrd<T> for $ty {
+			fn bound_partial_cmp(&self, bound: DirectedBound<&T>) -> Option<BoundOrdering> {
+				match bound.value {
+					Bound::Included(b) => match b.partial_cmp(self) {
+						Some(Ordering::Less) => if bound.direction == BoundDirection::Start {
+							Some(BoundOrdering::Included(false))
+						} else {
+							let limit = *self > std::$ty::MIN && *b == *self - 1;
+							Some(BoundOrdering::Excluded(limit))
+						},
+						Some(Ordering::Equal) => Some(BoundOrdering::Included(true)),
+						Some(Ordering::Greater) => if bound.direction == BoundDirection::Start {
+							let limit = *self < std::$ty::MAX && *b == *self + 1;
+							Some(BoundOrdering::Excluded(limit))
+						} else {
+							Some(BoundOrdering::Included(false))
+						},
+						None => None
+					},
+					Bound::Excluded(b) => match b.partial_cmp(self) {
+						Some(Ordering::Less) => if bound.direction == BoundDirection::Start {
+							let limit = *self > std::$ty::MIN && *b == *self - 1;
+							Some(BoundOrdering::Included(limit))
+						} else {
+							Some(BoundOrdering::Excluded(false))
+						},
+						Some(Ordering::Equal) => Some(BoundOrdering::Excluded(true)),
+						Some(Ordering::Greater) => if bound.direction == BoundDirection::Start {
+							Some(BoundOrdering::Excluded(false))
+						} else {
+							let limit = *self < std::$ty::MAX && *b == *self + 1;
+							Some(BoundOrdering::Included(limit))
+						},
+						None => None
 					},
 					Bound::Unbounded => {
-						match direction {
-							BoundDirection::Start => Some(std::$ty::MIN),
-							BoundDirection::End => Some(std::$ty::MAX)
-						}
+						let limit = (bound.direction == BoundDirection::Start && *self == std::$ty::MIN) || (bound.direction == BoundDirection::End && *self == std::$ty::MAX);
+						Some(BoundOrdering::Included(limit))
 					}
 				}
 			}
@@ -141,65 +173,55 @@ macro_rules! int_included_bound {
 	}
 }
 
-int_included_bound!(u8);
-int_included_bound!(i8);
-int_included_bound!(u16);
-int_included_bound!(i16);
-int_included_bound!(u32);
-int_included_bound!(i32);
-int_included_bound!(u64);
-int_included_bound!(i64);
-int_included_bound!(u128);
-int_included_bound!(i128);
-int_included_bound!(usize);
-int_included_bound!(isize);
+impl_int_bound_partial_order!(u8);
+impl_int_bound_partial_order!(i8);
+impl_int_bound_partial_order!(u16);
+impl_int_bound_partial_order!(i16);
+impl_int_bound_partial_order!(u32);
+impl_int_bound_partial_order!(i32);
+impl_int_bound_partial_order!(u64);
+impl_int_bound_partial_order!(i64);
+impl_int_bound_partial_order!(u128);
+impl_int_bound_partial_order!(i128);
+impl_int_bound_partial_order!(usize);
+impl_int_bound_partial_order!(isize);
 
-macro_rules! float_bound_partial_ord {
+macro_rules! impl_float_bound_partial_order {
 	($ty:ident) => {
-		impl BoundPartialOrd for $ty {
-			fn bound_partial_cmp((a, a_direction): (Bound<&Self>, BoundDirection), (b, b_direction): (Bound<&Self>, BoundDirection)) -> Option<Ordering> {
-				match (a, b) {
-					(Bound::Included(a), Bound::Included(b)) => a.partial_cmp(b),
-					(Bound::Included(a), Bound::Excluded(b)) => match a.partial_cmp(b) {
-						Some(Ordering::Less) => Some(Ordering::Less),
-						Some(Ordering::Equal) => if b_direction == BoundDirection::Start {
-							Some(Ordering::Less)
+		impl<T: PartialOrd<$ty>> BoundPartialOrd<T> for $ty {
+			fn bound_partial_cmp(&self, bound: DirectedBound<&T>) -> Option<BoundOrdering> {
+				match bound.value {
+					Bound::Included(b) => match b.partial_cmp(self) {
+						Some(Ordering::Less) => if bound.direction == BoundDirection::Start {
+							Some(BoundOrdering::Included(false))
 						} else {
-							Some(Ordering::Greater)
+							Some(BoundOrdering::Excluded(false))
 						},
-						Some(Ordering::Greater) => Some(Ordering::Greater),
-						None => None
-					},
-					(Bound::Included(_), Bound::Unbounded) => if b_direction == BoundDirection::Start {
-						Some(Ordering::Greater)
-					} else {
-						Some(Ordering::Less)
-					},
-					(Bound::Excluded(a), Bound::Included(b)) => match a.partial_cmp(b) {
-						Some(Ordering::Less) => Some(Ordering::Less),
-						Some(Ordering::Equal) => if a_direction == BoundDirection::Start {
-							Some(Ordering::Greater)
+						Some(Ordering::Equal) => Some(BoundOrdering::Included(true)),
+						Some(Ordering::Greater) => if bound.direction == BoundDirection::Start {
+							Some(BoundOrdering::Excluded(false))
 						} else {
-							Some(Ordering::Less)
+							Some(BoundOrdering::Included(false))
 						},
-						Some(Ordering::Greater) => Some(Ordering::Greater),
 						None => None
 					},
-					(Bound::Excluded(a), Bound::Excluded(b)) => match a.partial_cmp(b) {
-						Some(Ordering::Equal) => Some(b_direction.cmp(&a_direction)),
-						Some(ordering) => Some(ordering),
+					Bound::Excluded(b) => match b.partial_cmp(self) {
+						Some(Ordering::Less) => if bound.direction == BoundDirection::Start {
+							Some(BoundOrdering::Included(false))
+						} else {
+							Some(BoundOrdering::Excluded(false))
+						},
+						Some(Ordering::Equal) => Some(BoundOrdering::Excluded(true)),
+						Some(Ordering::Greater) => if bound.direction == BoundDirection::Start {
+							Some(BoundOrdering::Excluded(false))
+						} else {
+							Some(BoundOrdering::Included(false))
+						},
 						None => None
 					},
-					(Bound::Excluded(_), Bound::Unbounded) => if b_direction == BoundDirection::Start {
-						Some(Ordering::Greater)
-					} else {
-						Some(Ordering::Less)
-					},
-					(Bound::Unbounded, Bound::Unbounded) => Some(a_direction.cmp(&b_direction)),
-					(Bound::Unbounded, _) => if a_direction == BoundDirection::Start {
-						Some(Ordering::Less)
-					} else {
-						Some(Ordering::Greater)
+					Bound::Unbounded => {
+						let limit = (bound.direction == BoundDirection::Start && *self == std::$ty::MIN) || (bound.direction == BoundDirection::End && *self == std::$ty::MAX);
+						Some(BoundOrdering::Included(limit))
 					}
 				}
 			}
@@ -207,24 +229,91 @@ macro_rules! float_bound_partial_ord {
 	}
 }
 
-float_bound_partial_ord!(f32);
-float_bound_partial_ord!(f64);
+impl_float_bound_partial_order!(f32);
+impl_float_bound_partial_order!(f64);
 
-fn min_start_bound<'a, T: BoundPartialOrd>(a: Bound<&'a T>, b: Bound<&'a T>) -> Bound<&'a T> {
-	match T::bound_partial_cmp((a, BoundDirection::Start), (b, BoundDirection::Start)) {
-		Some(Ordering::Less) => a,
-		_ => b
+impl<T, U> PartialEq<DirectedBound<U>> for DirectedBound<T> where T: BoundPartialOrd<U> {
+	fn eq(&self, other: &DirectedBound<U>) -> bool {
+		self.partial_cmp(other) == Some(Ordering::Equal)
 	}
 }
 
-fn max_end_bound<'a, T: BoundPartialOrd>(a: Bound<&'a T>, b: Bound<&'a T>) -> Bound<&'a T> {
-	match T::bound_partial_cmp((a, BoundDirection::End), (b, BoundDirection::End)) {
-		Some(Ordering::Greater) => a,
-		_ => b
+impl<T, U> PartialOrd<DirectedBound<U>> for DirectedBound<T> where T: BoundPartialOrd<U> {
+	fn partial_cmp(&self, other: &DirectedBound<U>) -> Option<Ordering> {
+		match &self.value {
+			Bound::Included(a) => match a.bound_partial_cmp(other.as_ref()) {
+				Some(BoundOrdering::Included(true)) => Some(Ordering::Equal),
+				Some(BoundOrdering::Included(false)) => if other.direction == BoundDirection::Start {
+					Some(Ordering::Greater)
+				} else {
+					Some(Ordering::Less)
+				},
+				Some(BoundOrdering::Excluded(_)) => if other.direction == BoundDirection::Start {
+					Some(Ordering::Less)
+				} else {
+					Some(Ordering::Greater)
+				},
+				None => None
+			},
+			Bound::Excluded(a) => match a.bound_partial_cmp(other.as_ref()) {
+				Some(BoundOrdering::Included(_)) => if self.direction == BoundDirection::Start {
+					Some(Ordering::Greater)
+				} else {
+					Some(Ordering::Less)
+				},
+				Some(BoundOrdering::Excluded(true)) => match (self.direction, other.direction) {
+					(BoundDirection::Start, BoundDirection::End) => Some(Ordering::Greater),
+					(BoundDirection::End, BoundDirection::Start) => Some(Ordering::Less),
+					_ => Some(Ordering::Equal)
+				},
+				Some(BoundOrdering::Excluded(false)) => if other.direction == BoundDirection::Start {
+					Some(Ordering::Less)
+				} else {
+					Some(Ordering::Greater)
+				},
+				None => None
+			},
+			Bound::Unbounded => match &other.value {
+				Bound::Unbounded => self.direction.partial_cmp(&other.direction),
+				_ => if self.direction == BoundDirection::Start {
+					Some(Ordering::Less)
+				} else {
+					Some(Ordering::Greater)
+				}
+			}
+		}
 	}
 }
 
-#[derive(Debug, Clone, Copy)]
+// pub fn bounds_patial_cmp<T, U>(a: DirectedBound<T>, b: DirectedBound<U>) -> Option<Ordering> where T: BoundPartialOrd<U> {
+// 	match a.value {
+// 		Bound::Included(a) => match a.bound_partial_cmp(b) {
+// 			Some(BoundOrdering::Included) => if b.direction == BoundDirection::Start {
+// 				Some(Ordering::Greater)
+// 			} else {
+// 				Some(Ordering::Less)
+// 			},
+// 			// ...
+// 		}
+// 	}
+// }
+
+fn max_bound<'a, T: BoundPartialOrd>(a: Bound<&'a T>, b: Bound<&'a T>, direction: BoundDirection) -> Bound<&'a T> {
+	match &a {
+		Bound::Included(value) => match value.bound_partial_cmp(DirectedBound::new(b, direction)) {
+			Some(BoundOrdering::Included(_)) => b,
+			_ => a
+		},
+		Bound::Excluded(value) => match value.bound_partial_cmp(DirectedBound::new(b, direction)) {
+			Some(BoundOrdering::Included(_)) => b,
+			_ => a
+		},
+		Bound::Unbounded => a
+	}
+	
+}
+
+#[derive(Debug, Clone)]
 pub struct Range<T> {
 	start: Bound<T>,
 	end: Bound<T>
@@ -232,8 +321,8 @@ pub struct Range<T> {
 
 impl<T> Range<T> {
 	pub fn add<S>(&mut self, other: &S) where T: Clone + BoundPartialOrd, S: RangeBounds<T> {
-		self.start = min_start_bound(self.start_bound(), other.start_bound()).cloned();
-		self.end = max_end_bound(self.end_bound(), other.end_bound()).cloned();
+		self.start = max_bound(self.start_bound(), other.start_bound(), BoundDirection::Start).cloned();
+		self.end = max_bound(self.end_bound(), other.end_bound(), BoundDirection::End).cloned();
 	}
 }
 
@@ -265,64 +354,82 @@ impl<T> RangeBounds<T> for Range<T> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
+pub enum BoundOrdering {
+	Included(bool),
+	Excluded(bool)
+}
+
+pub trait BoundPartialOrd<T = Self> {
+	fn bound_partial_cmp(&self, bound: DirectedBound<&T>) -> Option<BoundOrdering>;
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum RangeOrdering {
-	Before,
-	ConnectedBefore,
-	Intersecting,
-	ConnectedAfter,
-	After
+	Before(bool),
+	Intersecting(bool, bool),
+	After(bool)
 }
 
 impl RangeOrdering {
 	pub fn is_before(&self, disconnected: bool) -> bool {
 		match self {
-			RangeOrdering::Before => true,
-			RangeOrdering::ConnectedBefore => !disconnected,
+			RangeOrdering::Before(limit) => !(disconnected && *limit),
 			_ => false
 		}
 	}
 
 	pub fn is_after(&self, disconnected: bool) -> bool {
 		match self {
-			RangeOrdering::After => true,
-			RangeOrdering::ConnectedAfter => !disconnected,
+			RangeOrdering::After(limit) => !(disconnected && *limit),
 			_ => false
 		}
 	}
 
 	pub fn matches(&self, disconnected: bool) -> bool {
 		match self {
-			RangeOrdering::ConnectedBefore => !disconnected,
-			RangeOrdering::Intersecting => true,
-			RangeOrdering::ConnectedAfter => !disconnected,
+			RangeOrdering::Intersecting(limit_before, limit_after) => !(disconnected && *limit_before) && !(disconnected && *limit_after),
 			_ => false
 		}
 	}
 }
 
-pub trait RangeOrd<T = Self>: Sized {
-	fn range_cmp(a: &Range<Self>, b: &T) -> RangeOrdering;
+pub trait RangePartialOrd<T = Self>: Sized {
+	fn range_partial_cmp<R: RangeBounds<T>>(&self, range: &R) -> Option<RangeOrdering>;
 }
 
-impl<U, T: BoundPartialOrd> RangeOrd<Range<U>> for T {
-	fn range_cmp(a: &Range<Self>, b: &Range<U>) -> RangeOrdering {
+impl<T: Copy, U> RangePartialOrd<U> for T where T: BoundPartialOrd<U> {
+	fn range_partial_cmp<R: RangeBounds<U>>(&self, range: &R) -> Option<RangeOrdering> {
+		match self.bound_partial_cmp(DirectedBound::start(range.start_bound())) {
+			Some(BoundOrdering::Excluded(limit_before)) => Some(RangeOrdering::Before(limit_before)),
+			Some(BoundOrdering::Included(limit_before)) => match self.bound_partial_cmp(DirectedBound::end(range.end_bound())) {
+				Some(BoundOrdering::Excluded(limit_after)) => Some(RangeOrdering::After(limit_after)),
+				Some(BoundOrdering::Included(limit_after)) => Some(RangeOrdering::Intersecting(limit_before, limit_after)),
+				None => None
+			},
+			None => None
+		}
+	}
+}
+
+impl<T, U> RangePartialOrd<U> for Range<T> where T: BoundPartialOrd<U> {
+	fn range_partial_cmp<R: RangeBounds<U>>(&self, _range: &R) -> Option<RangeOrdering> {
 		panic!("TODO")
 	}
 }
 
-impl<U, T: BoundPartialOrd<U>> PartialEq<std::ops::Range<U>> for Range<T> {
-	fn eq(&self, other: &std::ops::Range<U>) -> bool {
-		T::bound_partial_cmp((self.start_bound(), BoundDirection::Start), (other.start_bound(), BoundDirection::Start)) == Some(Ordering::Equal) &&
-		T::bound_partial_cmp((self.end_bound(), BoundDirection::End), (other.end_bound(), BoundDirection::End)) == Some(Ordering::Equal)
-	}
-}
+// impl<U, T: BoundPartialOrd<U>> PartialEq<std::ops::Range<U>> for Range<T> {
+// 	fn eq(&self, other: &std::ops::Range<U>) -> bool {
+// 		T::bound_partial_cmp((self.start_bound(), BoundDirection::Start), (other.start_bound(), BoundDirection::Start)) == Some(Ordering::Equal) &&
+// 		T::bound_partial_cmp((self.end_bound(), BoundDirection::End), (other.end_bound(), BoundDirection::End)) == Some(Ordering::Equal)
+// 	}
+// }
 
-impl<U, T: BoundPartialOrd<U>> PartialOrd<std::ops::Range<U>> for Range<T> {
-	fn partial_cmp(&self, other: &std::ops::Range<U>) -> Option<Ordering> {
-		//T::bound_partial_cmp((self.start_bound(), BoundDirection::Start), (other.start_bound(), BoundDirection::Start))
-		None
-	}
-}
+// impl<U, T: BoundPartialOrd<U>> PartialOrd<std::ops::Range<U>> for Range<T> {
+// 	fn partial_cmp(&self, other: &std::ops::Range<U>) -> Option<Ordering> {
+// 		//T::bound_partial_cmp((self.start_bound(), BoundDirection::Start), (other.start_bound(), BoundDirection::Start))
+// 		None
+// 	}
+// }
 
 impl<T: Clone> From<T> for Range<T> {
 	fn from(t: T) -> Range<T> {
@@ -345,9 +452,9 @@ impl<T> From<std::ops::Range<T>> for Range<T> {
 pub trait RangeExt<T> {
 	fn is_empty(&self) -> bool where T: BoundPartialOrd;
 	
-	fn intersects<U, S>(&self, other: &S) -> bool where T: BoundPartialOrd<U>, U: BoundPartialOrd<T>, S: RangeBounds<U>;
+	fn intersects<U: Clone, S>(&self, other: &S) -> bool where T: BoundPartialOrd<U>, U: BoundPartialOrd<T>, S: RangeBounds<U>;
 
-	fn connected_to<U, S>(&self, other: &S) -> bool where T: BoundPartialOrd<U>, U: BoundPartialOrd<T>, S: RangeBounds<U>;
+	fn connected_to<U: Clone, S>(&self, other: &S) -> bool where T: BoundPartialOrd<U>, U: BoundPartialOrd<T>, S: RangeBounds<U>;
 
 	// Output ranges are never empty.
 	fn without<'a, S>(&'a self, other: &'a S) -> (Option<Range<&'a T>>, Option<Range<&'a T>>) where T: BoundPartialOrd, S: RangeBounds<T>;
@@ -363,28 +470,28 @@ fn invert_bound<T>(bound: Bound<T>) -> Option<Bound<T>> {
 }
 
 #[inline(always)]
-fn is_range_empty<T, U>(start: Bound<&T>, end: Bound<&U>) -> bool where T: BoundPartialOrd<U> {
-	T::bound_partial_cmp((start, BoundDirection::Start), (end, BoundDirection::End)) == Some(Ordering::Greater)
+fn is_range_empty<T: Clone, U: Clone>(start: Bound<&T>, end: Bound<&U>) -> bool where T: BoundPartialOrd<U> {
+	DirectedBound::start(start.cloned()) > DirectedBound::end(end.cloned())
 }
 
 #[inline(always)]
-fn are_conneted_bounds<T, U>(end: Bound<&T>, start: Bound<&U>) -> bool where T: BoundPartialOrd<U> {
+fn are_conneted_bounds<T: Clone, U: Clone>(end: Bound<&T>, start: Bound<&U>) -> bool where T: BoundPartialOrd<U> {
 	match (invert_bound(end), invert_bound(start)) {
 		(Some(start), Some(end)) => is_range_empty(start, end),
 		_ => true
 	}
 }
 
-impl<T, R: RangeBounds<T>> RangeExt<T> for R {
+impl<T: Clone, R: RangeBounds<T>> RangeExt<T> for R {
 	fn is_empty(&self) -> bool where T: BoundPartialOrd {
 		is_range_empty(self.start_bound(), self.end_bound())
 	}
 
-	fn intersects<U, S>(&self, other: &S) -> bool where T: BoundPartialOrd<U>, U: BoundPartialOrd<T>, S: RangeBounds<U> {
+	fn intersects<U: Clone, S>(&self, other: &S) -> bool where T: BoundPartialOrd<U>, U: BoundPartialOrd<T>, S: RangeBounds<U> {
 		!is_range_empty(self.start_bound(), other.end_bound()) || !is_range_empty(other.start_bound(), self.end_bound())
 	}
 
-	fn connected_to<U, S>(&self, other: &S) -> bool where T: BoundPartialOrd<U>, U: BoundPartialOrd<T>, S: RangeBounds<U> {
+	fn connected_to<U: Clone, S>(&self, other: &S) -> bool where T: BoundPartialOrd<U>, U: BoundPartialOrd<T>, S: RangeBounds<U> {
 		are_conneted_bounds(self.end_bound(), other.start_bound()) && are_conneted_bounds(other.end_bound(), self.start_bound())
 	}
 
@@ -422,17 +529,17 @@ mod tests {
 	use super::*;
 
 	macro_rules! make_bound {
-		([= $v:literal ..]) => { (Bound::Included(&$v), BoundDirection::Start) };
-		([$v:literal ..]) => { (Bound::Excluded(&$v), BoundDirection::Start) };
-		([~ ..]) => { (Bound::Unbounded, BoundDirection::Start) };
-		([..= $v:literal]) => { (Bound::Included(&$v), BoundDirection::End) };
-		([.. $v:literal]) => { (Bound::Excluded(&$v), BoundDirection::End) };
-		([.. ~]) => { (Bound::Unbounded, BoundDirection::End) }
+		([= $v:literal ..]) => { DirectedBound::start(Bound::Included($v)) };
+		([$v:literal ..]) => { DirectedBound::start(Bound::Excluded($v)) };
+		([~ ..]) => { DirectedBound::start(Bound::Unbounded) };
+		([..= $v:literal]) => { DirectedBound::end(Bound::Included($v)) };
+		([.. $v:literal]) => { DirectedBound::end(Bound::Excluded($v)) };
+		([.. ~]) => { DirectedBound::end(Bound::Unbounded) }
 	}
 
 	macro_rules! test_bound_cmp {
 		(@assert $ty:ty, $a:tt, $b:tt, $expected:ident) => {
-			assert_eq!(<$ty as BoundPartialOrd>::bound_partial_cmp(make_bound!($a), make_bound!($b)), Some(Ordering::$expected));
+			assert_eq!(<DirectedBound<$ty> as PartialOrd>::partial_cmp(&make_bound!($a), &make_bound!($b)), Some(Ordering::$expected));
 		};
 		($ty:ty, $a:tt < $b:tt) => {
 			test_bound_cmp!(@assert $ty, $a, $b, Less)
