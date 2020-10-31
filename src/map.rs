@@ -15,6 +15,7 @@ use linear_btree::{
 };
 use crate::{
 	Range,
+	Measure,
 	RangeExt,
 	RangeOrdering,
 	BoundPartialOrd,
@@ -60,7 +61,7 @@ impl<K: Clone + Ord + Debug, V> RangeMap<K, V> {
 		}
 	}
 
-	fn offset_in<T>(&self, id: usize, key: &T, disconnected: bool) -> Result<usize, (usize, Option<usize>)> where T: RangePartialOrd<K> {
+	fn offset_in<T>(&self, id: usize, key: &T, disconnected: bool) -> Result<usize, (usize, Option<usize>)> where T: PartialOrd<K> + Measure<K> {
 		match self.btree.node(id) {
 			Node::Internal(node) => {
 				let branches = node.branches();
@@ -99,7 +100,7 @@ impl<K: Clone + Ord + Debug, V> RangeMap<K, V> {
 		}
 	}
 
-	pub fn get(&self, key: K) -> Option<&V> where K: RangePartialOrd {
+	pub fn get(&self, key: K) -> Option<&V> where K: PartialOrd + Measure {
 		println!("get");
 		match self.address_of(&key, true) {
 			Ok(addr) => {
@@ -114,7 +115,7 @@ impl<K: Clone + Ord + Debug, V> RangeMap<K, V> {
 	}
 
 	/// Insert a new key-value binding.
-	pub fn insert<R: Into<Range<K>>>(&mut self, key: R, mut value: V) where K: BoundPartialOrd, V: PartialEq + Clone {
+	pub fn insert<R: Into<Range<K>>>(&mut self, key: R, mut value: V) where K: PartialOrd + Measure, V: PartialEq + Clone {
 		let key = key.into();
 		println!("insert_range");
 		match self.address_of(&key, false) {
@@ -204,7 +205,7 @@ impl<K: Clone + Ord + Debug, V> RangeMap<K, V> {
 	/// Remove a key.
 	///
 	/// Returns the value that was bound to this key, if any.
-	pub fn remove_range<R: Into<Range<K>>>(&mut self, key: R) where K: BoundPartialOrd, V: Clone {
+	pub fn remove_range<R: Into<Range<K>>>(&mut self, key: R) where K: PartialOrd + Measure, V: Clone {
 		let key = key.into();
 		match self.address_of(&key, true) {
 			Ok(mut addr) => {
