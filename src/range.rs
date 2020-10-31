@@ -333,6 +333,15 @@ impl<T: Clone> From<T> for Range<T> {
 	}
 }
 
+impl<T> From<std::ops::Range<T>> for Range<T> {
+	fn from(range: std::ops::Range<T>) -> Range<T> {
+		Range {
+			start: Bound::Included(range.start),
+			end: Bound::Excluded(range.end)
+		}
+	}
+}
+
 pub trait RangeExt<T> {
 	fn is_empty(&self) -> bool where T: BoundPartialOrd;
 	

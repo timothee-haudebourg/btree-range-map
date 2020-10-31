@@ -100,7 +100,7 @@ impl<K: Clone + Ord + Debug, V> RangeMap<K, V> {
 		}
 	}
 
-	pub fn get<T>(&self, key: T) -> Option<&V> where K: BoundPartialOrd + RangeOrd<T> {
+	pub fn get(&self, key: K) -> Option<&V> where K: BoundPartialOrd + RangeOrd {
 		println!("get");
 		match self.address_of(&key, true) {
 			Ok(addr) => {
@@ -114,12 +114,9 @@ impl<K: Clone + Ord + Debug, V> RangeMap<K, V> {
 		}
 	}
 
-	pub fn insert(&mut self, key: K, value: V) where K: BoundPartialOrd, V: PartialEq + Clone {
-		self.insert_range(key.into(), value)
-	}
-
 	/// Insert a new key-value binding.
-	pub fn insert_range(&mut self, key: Range<K>, mut value: V) where K: BoundPartialOrd, V: PartialEq + Clone {
+	pub fn insert<R: Into<Range<K>>>(&mut self, key: R, mut value: V) where K: BoundPartialOrd, V: PartialEq + Clone {
+		let key = key.into();
 		println!("insert_range");
 		match self.address_of(&key, false) {
 			Ok(mut addr) => {

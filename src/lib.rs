@@ -4,3 +4,4 @@ mod range;
 mod map;
 
 pub use range::*;
+pub use map::*;
