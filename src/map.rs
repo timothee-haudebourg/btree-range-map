@@ -14,19 +14,18 @@ use linear_btree::{
 	}
 };
 use crate::{
-	Range,
+	AnyRange,
+	AsRange,
 	Measure,
-	RangeExt,
 	RangeOrdering,
-	BoundPartialOrd,
 	RangePartialOrd
 };
 
 pub struct RangeMap<K, V> {
-	btree: BTreeMap<Range<K>, V>
+	btree: BTreeMap<AnyRange<K>, V>
 }
 
-impl<K: Clone + Ord + Debug, V> RangeMap<K, V> {
+impl<K: Clone + PartialOrd + Measure + Debug, V> RangeMap<K, V> {
 	/// Create a new empty map.
 	pub fn new() -> RangeMap<K, V> {
 		RangeMap {
@@ -61,11 +60,11 @@ impl<K: Clone + Ord + Debug, V> RangeMap<K, V> {
 		}
 	}
 
-	fn offset_in<T>(&self, id: usize, key: &T, disconnected: bool) -> Result<usize, (usize, Option<usize>)> where T: PartialOrd<K> + Measure<K> {
+	fn offset_in<T>(&self, id: usize, key: &T, disconnected: bool) -> Result<usize, (usize, Option<usize>)> where T: RangePartialOrd<K> {
 		match self.btree.node(id) {
 			Node::Internal(node) => {
 				let branches = node.branches();
-				match binary_search_with(branches, key, disconnected) {
+				match binary_search(branches, key, disconnected) {
 					Some(i) => {
 						let b = &branches[i];
 						if key.range_partial_cmp(b.item.key()).unwrap_or(RangeOrdering::After(false)).matches(disconnected) {
@@ -81,7 +80,7 @@ impl<K: Clone + Ord + Debug, V> RangeMap<K, V> {
 			},
 			Node::Leaf(leaf) => {
 				let items = leaf.items();
-				match binary_search_with(items, key, disconnected) {
+				match binary_search(items, key, disconnected) {
 					Some(i) => {
 						let item = &items[i];
 						println!("leaf found");
@@ -100,7 +99,7 @@ impl<K: Clone + Ord + Debug, V> RangeMap<K, V> {
 		}
 	}
 
-	pub fn get(&self, key: K) -> Option<&V> where K: PartialOrd + Measure {
+	pub fn get(&self, key: K) -> Option<&V> where K: RangePartialOrd {
 		println!("get");
 		match self.address_of(&key, true) {
 			Ok(addr) => {
@@ -115,8 +114,8 @@ impl<K: Clone + Ord + Debug, V> RangeMap<K, V> {
 	}
 
 	/// Insert a new key-value binding.
-	pub fn insert<R: Into<Range<K>>>(&mut self, key: R, mut value: V) where K: PartialOrd + Measure, V: PartialEq + Clone {
-		let key = key.into();
+	pub fn insert<R: AsRange<Item=K>>(&mut self, key: R, mut value: V) where K: PartialOrd + Measure, V: PartialEq + Clone {
+		let key = AnyRange::from(key);
 		println!("insert_range");
 		match self.address_of(&key, false) {
 			Ok(mut addr) => {
@@ -205,7 +204,7 @@ impl<K: Clone + Ord + Debug, V> RangeMap<K, V> {
 	/// Remove a key.
 	///
 	/// Returns the value that was bound to this key, if any.
-	pub fn remove_range<R: Into<Range<K>>>(&mut self, key: R) where K: PartialOrd + Measure, V: Clone {
+	pub fn remove_range<R: Into<AnyRange<K>>>(&mut self, key: R) where K: PartialOrd + Measure, V: Clone {
 		let key = key.into();
 		match self.address_of(&key, true) {
 			Ok(mut addr) => {
@@ -255,7 +254,7 @@ impl<K: Clone + Ord + Debug, V> RangeMap<K, V> {
 	}
 }
 
-pub fn binary_search_with<T, U, V, I: AsRef<Item<Range<T>, V>>>(items: &[I], element: &U, disconnected: bool) -> Option<usize> where U: RangePartialOrd<T> {
+pub fn binary_search<T: Measure + PartialOrd, U, V, I: AsRef<Item<AnyRange<T>, V>>>(items: &[I], element: &U, disconnected: bool) -> Option<usize> where U: RangePartialOrd<T> {
 	if items.is_empty() || element.range_partial_cmp(items[0].as_ref().key()).unwrap_or(RangeOrdering::Before(false)).is_before(disconnected) {
 		None
 	} else {
@@ -286,5 +285,44 @@ pub fn binary_search_with<T, U, V, I: AsRef<Item<Range<T>, V>>>(items: &[I], ele
 		}
 
 		Some(i)
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	macro_rules! items {
+		[$($item:expr),*] => {
+			&[
+				$(
+					Item::new(AnyRange::from($item), ())
+				),*
+			]
+		};
+	}
+
+	#[test]
+	fn binary_search_disconnected_singletons() {
+		assert_eq!(binary_search(items![0], &0, true), Some(0));
+
+		assert_eq!(binary_search(items![0, 2, 4], &0, true), Some(0));
+		assert_eq!(binary_search(items![0, 2, 4], &1, true), Some(0));
+		assert_eq!(binary_search(items![0, 2, 4], &2, true), Some(1));
+		assert_eq!(binary_search(items![0, 2, 4], &3, true), Some(1));
+		assert_eq!(binary_search(items![0, 2, 4], &4, true), Some(2));
+		assert_eq!(binary_search(items![0, 2, 4], &5, true), Some(2));
+	}
+
+	#[test]
+	fn binary_search_connected_singletons() {
+		assert_eq!(binary_search(items![0], &0, false), Some(0));
+
+		assert_eq!(binary_search(items![0, 2, 4], &0, false), Some(0));
+		assert_eq!(binary_search(items![0, 2, 4], &1, false), Some(1));
+		assert_eq!(binary_search(items![0, 2, 4], &2, false), Some(1));
+		assert_eq!(binary_search(items![0, 2, 4], &3, false), Some(2));
+		assert_eq!(binary_search(items![0, 2, 4], &4, false), Some(2));
+		assert_eq!(binary_search(items![0, 2, 4], &5, false), Some(2));
 	}
 }
