@@ -37,16 +37,16 @@ impl<K: Clone + PartialOrd + Measure + Debug, V> RangeMap<K, V> {
 		self.btree.len()
 	}
 
-	fn address_of<T>(&self, key: &T, disconnected: bool) -> Result<ItemAddr, ItemAddr> where T: RangePartialOrd<K> {
+	fn address_of<T>(&self, key: &T, connected: bool) -> Result<ItemAddr, ItemAddr> where T: RangePartialOrd<K> {
 		match self.btree.root_id() {
-			Some(id) => self.address_in(id, key, disconnected),
+			Some(id) => self.address_in(id, key, connected),
 			None => Err(ItemAddr::nowhere())
 		}
 	}
 
-	fn address_in<T>(&self, mut id: usize, key: &T, disconnected: bool) -> Result<ItemAddr, ItemAddr> where T: RangePartialOrd<K> {
+	fn address_in<T>(&self, mut id: usize, key: &T, connected: bool) -> Result<ItemAddr, ItemAddr> where T: RangePartialOrd<K> {
 		loop {
-			match self.offset_in(id, key, disconnected) {
+			match self.offset_in(id, key, connected) {
 				Ok(offset) => {
 					return Ok(ItemAddr::new(id, offset))
 				},
@@ -60,14 +60,14 @@ impl<K: Clone + PartialOrd + Measure + Debug, V> RangeMap<K, V> {
 		}
 	}
 
-	fn offset_in<T>(&self, id: usize, key: &T, disconnected: bool) -> Result<usize, (usize, Option<usize>)> where T: RangePartialOrd<K> {
+	fn offset_in<T>(&self, id: usize, key: &T, connected: bool) -> Result<usize, (usize, Option<usize>)> where T: RangePartialOrd<K> {
 		match self.btree.node(id) {
 			Node::Internal(node) => {
 				let branches = node.branches();
-				match binary_search(branches, key, disconnected) {
+				match binary_search(branches, key, connected) {
 					Some(i) => {
 						let b = &branches[i];
-						if key.range_partial_cmp(b.item.key()).unwrap_or(RangeOrdering::After(false)).matches(disconnected) {
+						if key.range_partial_cmp(b.item.key()).unwrap_or(RangeOrdering::After(false)).matches(connected) {
 							Ok(i)
 						} else {
 							Err((i+1, Some(b.child)))
@@ -80,11 +80,13 @@ impl<K: Clone + PartialOrd + Measure + Debug, V> RangeMap<K, V> {
 			},
 			Node::Leaf(leaf) => {
 				let items = leaf.items();
-				match binary_search(items, key, disconnected) {
+				match binary_search(items, key, connected) {
 					Some(i) => {
 						let item = &items[i];
 						println!("leaf found");
-						if key.range_partial_cmp(item.key()).unwrap_or(RangeOrdering::After(false)).matches(disconnected) {
+						let ord = key.range_partial_cmp(item.key()).unwrap_or(RangeOrdering::After(false));
+						println!("ord: {:?}", ord);
+						if ord.matches(connected) {
 							Ok(i)
 						} else {
 							Err((i+1, None))
@@ -101,7 +103,7 @@ impl<K: Clone + PartialOrd + Measure + Debug, V> RangeMap<K, V> {
 
 	pub fn get(&self, key: K) -> Option<&V> where K: RangePartialOrd {
 		println!("get");
-		match self.address_of(&key, true) {
+		match self.address_of(&key, false) {
 			Ok(addr) => {
 				println!("found {}", addr);
 				Some(self.btree.item(addr).unwrap().value())
@@ -114,82 +116,90 @@ impl<K: Clone + PartialOrd + Measure + Debug, V> RangeMap<K, V> {
 	}
 
 	/// Insert a new key-value binding.
-	pub fn insert<R: AsRange<Item=K>>(&mut self, key: R, mut value: V) where K: PartialOrd + Measure, V: PartialEq + Clone {
-		let key = AnyRange::from(key);
+	pub fn insert<R: AsRange<Item=K>>(&mut self, key: R, mut value: V) where K: PartialOrd + Measure + Debug, V: PartialEq + Clone {
+		let mut key = AnyRange::from(key);
 		println!("insert_range");
-		match self.address_of(&key, false) {
+		match self.address_of(&key, true) {
 			Ok(mut addr) => {
 				println!("found connected range");
 				// some work to do here...
 				loop {
-					if self.btree.item(addr).map(|item| item.key().connected_to(&key)).unwrap_or(false) {
-						match self.btree.item(addr).unwrap().key().without(&key) {
-							(Some(left), Some(right)) => { // case (A)
-								println!("(A)");
-								let left = left.cloned();
-								let right = right.cloned();
+					match self.btree.item(addr).unwrap().key().without(&key) {
+						(Some(left), Some(right)) => { // case (A)
+							println!("(A)");
+							let left = left.cloned();
+							let right = right.cloned();
 
-								if self.btree.item(addr).unwrap().value() == &value {
-									self.btree.item_mut(addr).unwrap().key_mut().add(&key)
-								} else {
-									let right_value = {
-										let item = self.btree.item_mut(addr).unwrap();
-										*item.key_mut() = right;
-										item.value().clone()
-									};
-									
-									addr = self.btree.insert_at(addr, Item::new(key.into(), value));
-	
-									self.btree.insert_at(addr, Item::new(left, right_value));
-								}
-
-								return // no need to go further, the inserted range was totaly included in this one.
-							},
-							(Some(left), None) => { // case (B)
-								println!("(B)");
-								let left = left.cloned();
-
-								if self.btree.item(addr).unwrap().value() == &value {
-									self.btree.item_mut(addr).unwrap().key_mut().add(&key)
-								} else {
-									let left_value = {
-										let item = self.btree.item_mut(addr).unwrap();
-										*item.key_mut() = key.into();
-										std::mem::swap(&mut value, item.value_mut());
-										value
-									};
-	
-									self.btree.insert_at(addr, Item::new(left, left_value));
-								}
+							if self.btree.item(addr).unwrap().value() == &value {
+								self.btree.item_mut(addr).unwrap().key_mut().add(&key)
+							} else {
+								let right_value = {
+									let item = self.btree.item_mut(addr).unwrap();
+									*item.key_mut() = right;
+									item.value().clone()
+								};
 								
-								return // no need to go further, the inserted range does not intersect anything below this range.
-							},
-							(None, Some(right)) => { // case (C)
-								println!("(C)");
-								let right = right.cloned();
+								addr = self.btree.insert_at(addr, Item::new(key.into(), value));
 
-								let item = self.btree.item_mut(addr).unwrap();
-								*item.key_mut() = right;
-							},
-							(None, None) => { // case (D)
-								println!("(D)");
+								self.btree.insert_at(addr, Item::new(left, right_value));
+							}
+
+							return // no need to go further, the inserted range was totaly included in this one.
+						},
+						(Some(left), None) => { // case (B)
+							println!("(B)");
+							let left = left.cloned();
+
+							if self.btree.item(addr).unwrap().value() == &value {
+								self.btree.item_mut(addr).unwrap().key_mut().add(&key)
+							} else {
+								let left_value = {
+									let item = self.btree.item_mut(addr).unwrap();
+									*item.key_mut() = key.into();
+									std::mem::swap(&mut value, item.value_mut());
+									value
+								};
+
+								self.btree.insert_at(addr, Item::new(left, left_value));
+							}
+							
+							return // no need to go further, the inserted range does not intersect anything below this range.
+						},
+						(None, Some(right)) => { // case (C)
+							println!("(C)");
+							let right = right.cloned();
+
+							if self.btree.item_mut(addr).unwrap().value() == &value {
+								key.add(&right);
 								let (_, next_addr) = self.btree.remove_at(addr).unwrap();
 								addr = next_addr
+							} else {
+								let item = self.btree.item_mut(addr).unwrap();
+								*item.key_mut() = right;
 							}
+						},
+						(None, None) => { // case (D)
+							println!("(D)");
+							let (_, next_addr) = self.btree.remove_at(addr).unwrap();
+							addr = next_addr
 						}
+					}
 
-						match self.btree.previous_address(addr) {
-							Some(prev_addr) => addr = prev_addr,
-							None => { // case (E)
-								println!("(E)");
+					match self.btree.previous_address(addr) {
+						Some(prev_addr) => {
+							if self.btree.item(prev_addr).map(|item| item.key().connected_to(&key)).unwrap_or(false) {
+								addr = prev_addr
+							} else { // case (F)
+								println!("(F)");
 								self.btree.insert_at(addr, Item::new(key.into(), value));
 								return
 							}
+						},
+						None => { // case (E)
+							println!("(E)");
+							self.btree.insert_at(addr, Item::new(key.into(), value));
+							return
 						}
-					} else { // case (F)
-						println!("(F)");
-						self.btree.insert_at(addr, Item::new(key.into(), value));
-						return
 					}
 				}
 			},
@@ -204,9 +214,9 @@ impl<K: Clone + PartialOrd + Measure + Debug, V> RangeMap<K, V> {
 	/// Remove a key.
 	///
 	/// Returns the value that was bound to this key, if any.
-	pub fn remove_range<R: Into<AnyRange<K>>>(&mut self, key: R) where K: PartialOrd + Measure, V: Clone {
-		let key = key.into();
-		match self.address_of(&key, true) {
+	pub fn remove<R: AsRange<Item=K>>(&mut self, key: R) where K: PartialOrd + Measure, V: Clone {
+		let key = AnyRange::from(key);
+		match self.address_of(&key, false) {
 			Ok(mut addr) => {
 				loop {
 					if self.btree.item(addr).map(|item| item.key().intersects(&key)).unwrap_or(false) {
@@ -254,14 +264,17 @@ impl<K: Clone + PartialOrd + Measure + Debug, V> RangeMap<K, V> {
 	}
 }
 
-pub fn binary_search<T: Measure + PartialOrd, U, V, I: AsRef<Item<AnyRange<T>, V>>>(items: &[I], element: &U, disconnected: bool) -> Option<usize> where U: RangePartialOrd<T> {
-	if items.is_empty() || element.range_partial_cmp(items[0].as_ref().key()).unwrap_or(RangeOrdering::Before(false)).is_before(disconnected) {
+/// Search for the index of the gratest item less/below or equal/including the given element.
+/// 
+/// If `connected` is `true`, then it will search for the gratest item less/below or equal/including **or connected to** the given element.
+pub fn binary_search<T: Measure + PartialOrd, U, V, I: AsRef<Item<AnyRange<T>, V>>>(items: &[I], element: &U, connected: bool) -> Option<usize> where U: RangePartialOrd<T> {
+	if items.is_empty() || element.range_partial_cmp(items[0].as_ref().key()).unwrap_or(RangeOrdering::Before(false)).is_before(connected) {
 		None
 	} else {
 		let mut i = 0;
 		let mut j = items.len() - 1;
 
-		if !element.range_partial_cmp(items[j].as_ref().key()).unwrap_or(RangeOrdering::After(false)).is_before(disconnected) { 
+		if !element.range_partial_cmp(items[j].as_ref().key()).unwrap_or(RangeOrdering::After(false)).is_before(connected) { 
 			return Some(j)
 		}
 
@@ -274,7 +287,8 @@ pub fn binary_search<T: Measure + PartialOrd, U, V, I: AsRef<Item<AnyRange<T>, V
 			let k = (i + j) / 2;
 
 			if let Some(ord) = element.range_partial_cmp(items[k].as_ref().key()) {
-				if ord.is_before(disconnected) {
+				eprintln!("ord: {:?}", ord);
+				if ord.is_before(connected) {
 					j = k;
 				} else {
 					i = k;
@@ -302,45 +316,91 @@ mod tests {
 		};
 	}
 
-	// #[test]
-	// fn binary_search_disconnected_singletons() {
-	// 	assert_eq!(binary_search(items![0], &0, true), Some(0));
+	#[test]
+	fn binary_search_disconnected_singletons() {
+		assert_eq!(binary_search(items![0], &0, false), Some(0));
 
-	// 	assert_eq!(binary_search(items![0, 2, 4], &0, true), Some(0));
-	// 	assert_eq!(binary_search(items![0, 2, 4], &1, true), Some(0));
-	// 	assert_eq!(binary_search(items![0, 2, 4], &2, true), Some(1));
-	// 	assert_eq!(binary_search(items![0, 2, 4], &3, true), Some(1));
-	// 	assert_eq!(binary_search(items![0, 2, 4], &4, true), Some(2));
-	// 	assert_eq!(binary_search(items![0, 2, 4], &5, true), Some(2));
+		assert_eq!(binary_search(items![0, 2, 4], &0, false), Some(0));
+		assert_eq!(binary_search(items![0, 2, 4], &1, false), Some(0));
+		assert_eq!(binary_search(items![0, 2, 4], &2, false), Some(1));
+		assert_eq!(binary_search(items![0, 2, 4], &3, false), Some(1));
+		assert_eq!(binary_search(items![0, 2, 4], &4, false), Some(2));
+		assert_eq!(binary_search(items![0, 2, 4], &5, false), Some(2));
 
-	// 	assert_eq!(binary_search(items![0, 3, 6], &0, true), Some(0));
-	// 	assert_eq!(binary_search(items![0, 3, 6], &1, true), Some(0));
-	// 	assert_eq!(binary_search(items![0, 3, 6], &2, true), Some(0));
-	// 	assert_eq!(binary_search(items![0, 3, 6], &3, true), Some(1));
-	// 	assert_eq!(binary_search(items![0, 3, 6], &4, true), Some(1));
-	// 	assert_eq!(binary_search(items![0, 3, 6], &5, true), Some(1));
-	// 	assert_eq!(binary_search(items![0, 3, 6], &6, true), Some(2));
-	// 	assert_eq!(binary_search(items![0, 3, 6], &7, true), Some(2));
-	// }
+		assert_eq!(binary_search(items![0, 3, 6], &0, false), Some(0));
+		assert_eq!(binary_search(items![0, 3, 6], &1, false), Some(0));
+		assert_eq!(binary_search(items![0, 3, 6], &2, false), Some(0));
+		assert_eq!(binary_search(items![0, 3, 6], &3, false), Some(1));
+		assert_eq!(binary_search(items![0, 3, 6], &4, false), Some(1));
+		assert_eq!(binary_search(items![0, 3, 6], &5, false), Some(1));
+		assert_eq!(binary_search(items![0, 3, 6], &6, false), Some(2));
+		assert_eq!(binary_search(items![0, 3, 6], &7, false), Some(2));
+	}
+
+	#[test]
+	fn binary_search_disconnected_singletons_float() {
+		assert_eq!(binary_search(items![0.0], &0.0, false), Some(0));
+
+		assert_eq!(binary_search(items![0.0, 2.0, 4.0], &-1.0, false), None);
+		assert_eq!(binary_search(items![0.0, 2.0, 4.0], &0.0, false), Some(0));
+		assert_eq!(binary_search(items![0.0, 2.0, 4.0], &1.0, false), Some(0));
+		assert_eq!(binary_search(items![0.0, 2.0, 4.0], &2.0, false), Some(1));
+		assert_eq!(binary_search(items![0.0, 2.0, 4.0], &3.0, false), Some(1));
+		assert_eq!(binary_search(items![0.0, 2.0, 4.0], &4.0, false), Some(2));
+		assert_eq!(binary_search(items![0.0, 2.0, 4.0], &5.0, false), Some(2));
+
+		assert_eq!(binary_search(items![0.0, 3.0, 6.0], &0.0, false), Some(0));
+		assert_eq!(binary_search(items![0.0, 3.0, 6.0], &1.0, false), Some(0));
+		assert_eq!(binary_search(items![0.0, 3.0, 6.0], &2.0, false), Some(0));
+		assert_eq!(binary_search(items![0.0, 3.0, 6.0], &3.0, false), Some(1));
+		assert_eq!(binary_search(items![0.0, 3.0, 6.0], &4.0, false), Some(1));
+		assert_eq!(binary_search(items![0.0, 3.0, 6.0], &5.0, false), Some(1));
+		assert_eq!(binary_search(items![0.0, 3.0, 6.0], &6.0, false), Some(2));
+		assert_eq!(binary_search(items![0.0, 3.0, 6.0], &7.0, false), Some(2));
+	}
 
 	#[test]
 	fn binary_search_connected_singletons() {
-		// assert_eq!(binary_search(items![0], &0, false), Some(0));
+		assert_eq!(binary_search(items![0], &0, true), Some(0));
 
-		// assert_eq!(binary_search(items![0, 2, 4], &0, false), Some(0));
-		// assert_eq!(binary_search(items![0, 2, 4], &1, false), Some(0));
-		// assert_eq!(binary_search(items![0, 2, 4], &2, false), Some(1));
-		// assert_eq!(binary_search(items![0, 2, 4], &3, false), Some(1));
-		// assert_eq!(binary_search(items![0, 2, 4], &4, false), Some(2));
-		// assert_eq!(binary_search(items![0, 2, 4], &5, false), Some(2));
+		assert_eq!(binary_search(items![0, 2, 4], &0, true), Some(0));
+		assert_eq!(binary_search(items![0, 2, 4], &1, true), Some(1));
+		assert_eq!(binary_search(items![0, 2, 4], &2, true), Some(1));
+		assert_eq!(binary_search(items![0, 2, 4], &3, true), Some(2));
+		assert_eq!(binary_search(items![0, 2, 4], &4, true), Some(2));
+		assert_eq!(binary_search(items![0, 2, 4], &5, true), Some(2));
+		assert_eq!(binary_search(items![2, 4, 8], &0, true), None);
 
-		// assert_eq!(binary_search(items![0, 3, 6], &0, false), Some(0));
-		// assert_eq!(binary_search(items![0, 3, 6], &1, false), Some(0));
-		assert_eq!(binary_search(items![0, 3, 6], &2, false), Some(1));
-		// assert_eq!(binary_search(items![0, 3, 6], &3, false), Some(1));
-		// assert_eq!(binary_search(items![0, 3, 6], &4, false), Some(1));
-		// assert_eq!(binary_search(items![0, 3, 6], &5, false), Some(2));
-		// assert_eq!(binary_search(items![0, 3, 6], &6, false), Some(2));
-		// assert_eq!(binary_search(items![0, 3, 6], &7, false), Some(2));
+		assert_eq!(binary_search(items![0, 3, 6], &0, true), Some(0));
+		assert_eq!(binary_search(items![0, 3, 6], &1, true), Some(0));
+		assert_eq!(binary_search(items![0, 3, 6], &2, true), Some(1));
+		assert_eq!(binary_search(items![0, 3, 6], &3, true), Some(1));
+		assert_eq!(binary_search(items![0, 3, 6], &4, true), Some(1));
+		assert_eq!(binary_search(items![0, 3, 6], &5, true), Some(2));
+		assert_eq!(binary_search(items![0, 3, 6], &6, true), Some(2));
+		assert_eq!(binary_search(items![0, 3, 6], &7, true), Some(2));
+	}
+
+	// for floats, connected or disconnected makes no difference for singletons.
+	#[test]
+	fn binary_search_connected_singletons_float() {
+		assert_eq!(binary_search(items![0.0], &0.0, true), Some(0));
+
+		assert_eq!(binary_search(items![0.0, 2.0, 4.0], &-1.0, true), None);
+		assert_eq!(binary_search(items![0.0, 2.0, 4.0], &0.0, true), Some(0));
+		assert_eq!(binary_search(items![0.0, 2.0, 4.0], &1.0, true), Some(0));
+		assert_eq!(binary_search(items![0.0, 2.0, 4.0], &2.0, true), Some(1));
+		assert_eq!(binary_search(items![0.0, 2.0, 4.0], &3.0, true), Some(1));
+		assert_eq!(binary_search(items![0.0, 2.0, 4.0], &4.0, true), Some(2));
+		assert_eq!(binary_search(items![0.0, 2.0, 4.0], &5.0, true), Some(2));
+
+		assert_eq!(binary_search(items![0.0, 3.0, 6.0], &0.0, true), Some(0));
+		assert_eq!(binary_search(items![0.0, 3.0, 6.0], &1.0, true), Some(0));
+		assert_eq!(binary_search(items![0.0, 3.0, 6.0], &2.0, true), Some(0));
+		assert_eq!(binary_search(items![0.0, 3.0, 6.0], &3.0, true), Some(1));
+		assert_eq!(binary_search(items![0.0, 3.0, 6.0], &4.0, true), Some(1));
+		assert_eq!(binary_search(items![0.0, 3.0, 6.0], &5.0, true), Some(1));
+		assert_eq!(binary_search(items![0.0, 3.0, 6.0], &6.0, true), Some(2));
+		assert_eq!(binary_search(items![0.0, 3.0, 6.0], &7.0, true), Some(2));
 	}
 }
