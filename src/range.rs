@@ -395,6 +395,7 @@ impl<T: PartialEq<Self>> Measure<T> for f64 {
 	}
 }
 
+#[derive(Debug)]
 pub enum RangeOrdering {
 	Before(bool),
 	Intersecting(bool, bool),

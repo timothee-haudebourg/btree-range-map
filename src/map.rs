@@ -302,27 +302,45 @@ mod tests {
 		};
 	}
 
-	#[test]
-	fn binary_search_disconnected_singletons() {
-		assert_eq!(binary_search(items![0], &0, true), Some(0));
+	// #[test]
+	// fn binary_search_disconnected_singletons() {
+	// 	assert_eq!(binary_search(items![0], &0, true), Some(0));
 
-		assert_eq!(binary_search(items![0, 2, 4], &0, true), Some(0));
-		assert_eq!(binary_search(items![0, 2, 4], &1, true), Some(0));
-		assert_eq!(binary_search(items![0, 2, 4], &2, true), Some(1));
-		assert_eq!(binary_search(items![0, 2, 4], &3, true), Some(1));
-		assert_eq!(binary_search(items![0, 2, 4], &4, true), Some(2));
-		assert_eq!(binary_search(items![0, 2, 4], &5, true), Some(2));
-	}
+	// 	assert_eq!(binary_search(items![0, 2, 4], &0, true), Some(0));
+	// 	assert_eq!(binary_search(items![0, 2, 4], &1, true), Some(0));
+	// 	assert_eq!(binary_search(items![0, 2, 4], &2, true), Some(1));
+	// 	assert_eq!(binary_search(items![0, 2, 4], &3, true), Some(1));
+	// 	assert_eq!(binary_search(items![0, 2, 4], &4, true), Some(2));
+	// 	assert_eq!(binary_search(items![0, 2, 4], &5, true), Some(2));
+
+	// 	assert_eq!(binary_search(items![0, 3, 6], &0, true), Some(0));
+	// 	assert_eq!(binary_search(items![0, 3, 6], &1, true), Some(0));
+	// 	assert_eq!(binary_search(items![0, 3, 6], &2, true), Some(0));
+	// 	assert_eq!(binary_search(items![0, 3, 6], &3, true), Some(1));
+	// 	assert_eq!(binary_search(items![0, 3, 6], &4, true), Some(1));
+	// 	assert_eq!(binary_search(items![0, 3, 6], &5, true), Some(1));
+	// 	assert_eq!(binary_search(items![0, 3, 6], &6, true), Some(2));
+	// 	assert_eq!(binary_search(items![0, 3, 6], &7, true), Some(2));
+	// }
 
 	#[test]
 	fn binary_search_connected_singletons() {
-		assert_eq!(binary_search(items![0], &0, false), Some(0));
+		// assert_eq!(binary_search(items![0], &0, false), Some(0));
 
-		assert_eq!(binary_search(items![0, 2, 4], &0, false), Some(0));
-		assert_eq!(binary_search(items![0, 2, 4], &1, false), Some(1));
-		assert_eq!(binary_search(items![0, 2, 4], &2, false), Some(1));
-		assert_eq!(binary_search(items![0, 2, 4], &3, false), Some(2));
-		assert_eq!(binary_search(items![0, 2, 4], &4, false), Some(2));
-		assert_eq!(binary_search(items![0, 2, 4], &5, false), Some(2));
+		// assert_eq!(binary_search(items![0, 2, 4], &0, false), Some(0));
+		// assert_eq!(binary_search(items![0, 2, 4], &1, false), Some(0));
+		// assert_eq!(binary_search(items![0, 2, 4], &2, false), Some(1));
+		// assert_eq!(binary_search(items![0, 2, 4], &3, false), Some(1));
+		// assert_eq!(binary_search(items![0, 2, 4], &4, false), Some(2));
+		// assert_eq!(binary_search(items![0, 2, 4], &5, false), Some(2));
+
+		// assert_eq!(binary_search(items![0, 3, 6], &0, false), Some(0));
+		// assert_eq!(binary_search(items![0, 3, 6], &1, false), Some(0));
+		assert_eq!(binary_search(items![0, 3, 6], &2, false), Some(1));
+		// assert_eq!(binary_search(items![0, 3, 6], &3, false), Some(1));
+		// assert_eq!(binary_search(items![0, 3, 6], &4, false), Some(1));
+		// assert_eq!(binary_search(items![0, 3, 6], &5, false), Some(2));
+		// assert_eq!(binary_search(items![0, 3, 6], &6, false), Some(2));
+		// assert_eq!(binary_search(items![0, 3, 6], &7, false), Some(2));
 	}
 }
