@@ -1,0 +1,65 @@
+{
+	// Use IntelliSense to learn about possible attributes.
+	// Hover to view descriptions of existing attributes.
+	// For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug unit tests in library 'range-map'",
+			"cargo": {
+				"args": [
+					"test",
+					"--no-run",
+					"--lib",
+					"--package=range-map"
+				],
+				"filter": {
+					"name": "range-map",
+					"kind": "lib"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug integration test 'insert'",
+			"cargo": {
+				"args": [
+					"test",
+					"--no-run",
+					"--test=insert",
+					"--package=range-map"
+				],
+				"filter": {
+					"name": "insert",
+					"kind": "test"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug integration test 'remove'",
+			"cargo": {
+				"args": [
+					"test",
+					"--no-run",
+					"--test=remove",
+					"--package=range-map"
+				],
+				"filter": {
+					"name": "remove",
+					"kind": "test"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		}
+	]
+}
