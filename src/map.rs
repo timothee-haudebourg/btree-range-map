@@ -1,7 +1,7 @@
 use std::{
 	fmt::Debug
 };
-use linear_btree::{
+use local_btree::{
 	map::{
 		BTreeMap,
 		BTreeExt,
