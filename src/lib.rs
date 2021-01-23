@@ -1,7 +1,8 @@
 #![feature(bound_cloned)]
 
 mod range;
-mod map;
+pub mod generic;
 
 pub use range::*;
-pub use map::*;
+
+pub type RangeMap<K, V> = generic::RangeMap<K, V, slab::Slab<btree_slab::generic::Node<AnyRange<K>, V>>>;

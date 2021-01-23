@@ -1,14 +1,16 @@
-use std::{
-	fmt::Debug
+use cc_traits::{
+	Slab,
+	SlabMut
 };
-use local_btree::{
+use btree_slab::generic::{
 	map::{
 		BTreeMap,
 		BTreeExt,
 		BTreeExtMut
 	},
 	node::{
-		ItemAddr,
+		Address,
+		Offset,
 		Node,
 		Item
 	}
@@ -21,13 +23,13 @@ use crate::{
 	RangePartialOrd
 };
 
-pub struct RangeMap<K, V> {
-	btree: BTreeMap<AnyRange<K>, V>
+pub struct RangeMap<K, V, C: Slab<Node<AnyRange<K>, V>>> {
+	btree: BTreeMap<AnyRange<K>, V, C>
 }
 
-impl<K: Clone + PartialOrd + Measure + Debug, V> RangeMap<K, V> {
+impl<K: Clone + PartialOrd + Measure, V, C: Slab<Node<AnyRange<K>, V>>> RangeMap<K, V, C> {
 	/// Create a new empty map.
-	pub fn new() -> RangeMap<K, V> {
+	pub fn new() -> RangeMap<K, V, C> where C: Default {
 		RangeMap {
 			btree: BTreeMap::new()
 		}
@@ -37,21 +39,21 @@ impl<K: Clone + PartialOrd + Measure + Debug, V> RangeMap<K, V> {
 		self.btree.len()
 	}
 
-	fn address_of<T>(&self, key: &T, connected: bool) -> Result<ItemAddr, ItemAddr> where T: RangePartialOrd<K> {
+	fn address_of<T>(&self, key: &T, connected: bool) -> Result<Address, Address> where T: RangePartialOrd<K> {
 		match self.btree.root_id() {
 			Some(id) => self.address_in(id, key, connected),
-			None => Err(ItemAddr::nowhere())
+			None => Err(Address::nowhere())
 		}
 	}
 
-	fn address_in<T>(&self, mut id: usize, key: &T, connected: bool) -> Result<ItemAddr, ItemAddr> where T: RangePartialOrd<K> {
+	fn address_in<T>(&self, mut id: usize, key: &T, connected: bool) -> Result<Address, Address> where T: RangePartialOrd<K> {
 		loop {
 			match self.offset_in(id, key, connected) {
 				Ok(offset) => {
-					return Ok(ItemAddr::new(id, offset))
+					return Ok(Address::new(id, offset))
 				},
 				Err((offset, None)) => {
-					return Err(ItemAddr::new(id, offset))
+					return Err(Address::new(id, offset.into()))
 				},
 				Err((_, Some(child_id))) => {
 					id = child_id;
@@ -60,7 +62,7 @@ impl<K: Clone + PartialOrd + Measure + Debug, V> RangeMap<K, V> {
 		}
 	}
 
-	fn offset_in<T>(&self, id: usize, key: &T, connected: bool) -> Result<usize, (usize, Option<usize>)> where T: RangePartialOrd<K> {
+	fn offset_in<T>(&self, id: usize, key: &T, connected: bool) -> Result<Offset, (usize, Option<usize>)> where T: RangePartialOrd<K> {
 		match self.btree.node(id) {
 			Node::Internal(node) => {
 				let branches = node.branches();
@@ -68,7 +70,7 @@ impl<K: Clone + PartialOrd + Measure + Debug, V> RangeMap<K, V> {
 					Some(i) => {
 						let b = &branches[i];
 						if key.range_partial_cmp(b.item.key()).unwrap_or(RangeOrdering::After(false)).matches(connected) {
-							Ok(i)
+							Ok(i.into())
 						} else {
 							Err((i+1, Some(b.child)))
 						}
@@ -87,7 +89,7 @@ impl<K: Clone + PartialOrd + Measure + Debug, V> RangeMap<K, V> {
 						let ord = key.range_partial_cmp(item.key()).unwrap_or(RangeOrdering::After(false));
 						println!("ord: {:?}", ord);
 						if ord.matches(connected) {
-							Ok(i)
+							Ok(i.into())
 						} else {
 							Err((i+1, None))
 						}
@@ -114,19 +116,121 @@ impl<K: Clone + PartialOrd + Measure + Debug, V> RangeMap<K, V> {
 			}
 		}
 	}
+}
 
-	/// Insert a new key-value binding.
-	pub fn insert<R: AsRange<Item=K>>(&mut self, key: R, mut value: V) where K: PartialOrd + Measure + Debug, V: PartialEq + Clone {
+use std::mem::MaybeUninit;
+
+impl<K: Clone + PartialOrd + Measure, V, C: SlabMut<Node<AnyRange<K>, V>>> RangeMap<K, V, C> {
+	pub fn update<R: AsRange<Item=K>, F>(&mut self, key: R, f: F) where K: PartialOrd + Measure, F: Fn(Option<&V>) -> Option<V>, V: PartialEq + Clone {
 		let mut key = AnyRange::from(key);
-		println!("insert_range");
+		let mut next_addr = None;
 		match self.address_of(&key, true) {
 			Ok(mut addr) => {
-				println!("found connected range");
 				// some work to do here...
 				loop {
 					match self.btree.item(addr).unwrap().key().without(&key) {
 						(Some(left), Some(right)) => { // case (A)
-							println!("(A)");
+							let left = left.cloned();
+							let right = right.cloned();
+
+							let item = self.btree.item_mut(addr).unwrap();
+
+							match f(Some(item.value())) {
+								Some(new_value) => {
+									if item.value() != &new_value {
+										// insert the item.
+										let right_value = {
+											let item = self.btree.item_mut(addr).unwrap();
+											*item.key_mut() = right;
+											item.value().clone()
+										};
+										
+										addr = self.btree.insert_at(addr, Item::new(key.into(), new_value));
+		
+										self.btree.insert_at(addr, Item::new(left, right_value));
+									}
+								},
+								None => {
+									// remove the item.
+									let right_value = {
+										let item = self.btree.item_mut(addr).unwrap();
+										*item.key_mut() = right;
+										item.value().clone()
+									};
+									self.btree.insert_at(addr, Item::new(left, right_value));
+								}
+							}
+
+							break
+						},
+						(Some(left), None) => { // case (B)
+							let left = left.cloned();
+
+							match f(Some(self.btree.item(addr).unwrap().value())) {
+								Some(mut new_value) => {
+									let connected_to_the_right = if let Some(next_addr) = next_addr {
+										let next_item = self.btree.item_mut(next_addr).unwrap();
+										if *next_item.value() == new_value {
+											next_item.key_mut().add(&key);
+											true
+										} else {
+											false
+										}
+									} else {
+										false
+									};
+
+									let item = self.btree.item_mut(addr).unwrap();
+									if *item.value() == new_value {
+										if connected_to_the_right {
+											*item.key_mut() = left;
+										} else {
+											// ...
+										}
+									} else {
+										// ...
+									}
+
+									// // insert new value
+									// if item.value() == &new_value {
+									// 	item.key_mut().add(&key)
+									// } else {
+									// 	let left_value = {
+									// 		*item.key_mut() = key.into();
+									// 		std::mem::swap(&mut new_value, item.value_mut());
+									// 		new_value
+									// 	};
+	
+									// 	self.btree.insert_at(addr, Item::new(left, left_value));
+									// }
+								},
+								None => {
+									// remove item.
+									*item.key_mut() = left;
+								}
+							}
+							
+							return
+						},
+						_ => panic!("TODO")
+					}
+				}
+			},
+			Err(addr) => { // case (G)
+				panic!("TODO")
+			}
+		}
+	}
+
+	/// Insert a new key-value binding.
+	pub fn insert<R: AsRange<Item=K>>(&mut self, key: R, mut value: V) where K: PartialOrd + Measure, V: PartialEq + Clone {
+		let mut key = AnyRange::from(key);
+		match self.address_of(&key, true) {
+			Ok(mut addr) => {
+				// some work to do here...
+				loop {
+					match self.btree.item(addr).unwrap().key().without(&key) {
+						(Some(left), Some(right)) => { // case (A)
 							let left = left.cloned();
 							let right = right.cloned();
 
@@ -147,7 +251,6 @@ impl<K: Clone + PartialOrd + Measure + Debug, V> RangeMap<K, V> {
 							return // no need to go further, the inserted range was totaly included in this one.
 						},
 						(Some(left), None) => { // case (B)
-							println!("(B)");
 							let left = left.cloned();
 
 							if self.btree.item(addr).unwrap().value() == &value {
@@ -166,7 +269,6 @@ impl<K: Clone + PartialOrd + Measure + Debug, V> RangeMap<K, V> {
 							return // no need to go further, the inserted range does not intersect anything below this range.
 						},
 						(None, Some(right)) => { // case (C)
-							println!("(C)");
 							let right = right.cloned();
 
 							if self.btree.item_mut(addr).unwrap().value() == &value {
@@ -179,24 +281,21 @@ impl<K: Clone + PartialOrd + Measure + Debug, V> RangeMap<K, V> {
 							}
 						},
 						(None, None) => { // case (D)
-							println!("(D)");
 							let (_, next_addr) = self.btree.remove_at(addr).unwrap();
 							addr = next_addr
 						}
 					}
 
-					match self.btree.previous_address(addr) {
+					match self.btree.previous_item_address(addr) {
 						Some(prev_addr) => {
 							if self.btree.item(prev_addr).map(|item| item.key().connected_to(&key)).unwrap_or(false) {
 								addr = prev_addr
 							} else { // case (F)
-								println!("(F)");
 								self.btree.insert_at(addr, Item::new(key.into(), value));
 								return
 							}
 						},
 						None => { // case (E)
-							println!("(E)");
 							self.btree.insert_at(addr, Item::new(key.into(), value));
 							return
 						}
@@ -204,7 +303,6 @@ impl<K: Clone + PartialOrd + Measure + Debug, V> RangeMap<K, V> {
 				}
 			},
 			Err(addr) => { // case (G)
-				println!("(G) free insert at {}", addr);
 				// there are no connected ranges. We can freely insert this new range.
 				self.btree.insert_at(addr, Item::new(key.into(), value));
 			}
@@ -212,8 +310,6 @@ impl<K: Clone + PartialOrd + Measure + Debug, V> RangeMap<K, V> {
 	}
 
 	/// Remove a key.
-	///
-	/// Returns the value that was bound to this key, if any.
 	pub fn remove<R: AsRange<Item=K>>(&mut self, key: R) where K: PartialOrd + Measure, V: Clone {
 		let key = AnyRange::from(key);
 		match self.address_of(&key, false) {
@@ -250,7 +346,7 @@ impl<K: Clone + PartialOrd + Measure + Debug, V> RangeMap<K, V> {
 							}
 						}
 
-						match self.btree.previous_address(addr) {
+						match self.btree.previous_item_address(addr) {
 							Some(prev_addr) => addr = prev_addr,
 							None => break
 						}
