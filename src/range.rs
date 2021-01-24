@@ -5,7 +5,6 @@ use std::{
 		Bound
 	},
 	cmp::{
-		Ord,
 		PartialOrd,
 		Ordering
 	}
@@ -22,6 +21,20 @@ impl<T> AnyRange<T> {
 		AnyRange {
 			start: range.start().cloned(),
 			end: range.end().cloned()
+		}
+	}
+
+	pub fn len(&self) -> T::Len where T: Measure {
+		match (self.start_bound(), self.end_bound()) {
+			(Bound::Included(a), Bound::Included(b)) => a.distance(b) + b.len(),
+			(Bound::Included(a), Bound::Excluded(b)) => a.distance(b),
+			(Bound::Included(a), Bound::Unbounded) => a.distance(&T::MAX),
+			(Bound::Excluded(a), Bound::Included(b)) => a.distance(b) - a.len() + b.len(),
+			(Bound::Excluded(a), Bound::Excluded(b)) => a.distance(b) - a.len(),
+			(Bound::Excluded(a), Bound::Unbounded) => a.distance(&T::MAX) - a.len(),
+			(Bound::Unbounded, Bound::Included(b)) => T::MIN.distance(b) + b.len(),
+			(Bound::Unbounded, Bound::Excluded(b)) => T::MIN.distance(b),
+			(Bound::Unbounded, Bound::Unbounded) => T::MIN.distance(&T::MAX)
 		}
 	}
 
@@ -113,7 +126,6 @@ impl<T> RangeBounds<T> for RangeFromExcludedToIncluded<T> {
 	}
 }
 
-// `a...`
 pub struct RangeFromExcluded<T> {
 	pub start: T
 }
@@ -164,6 +176,13 @@ pub trait AsRange: Sized {
 			Some(RangeOrdering::Before(connected)) => connected,
 			Some(RangeOrdering::After(connected)) => connected,
 			_ => false
+		}
+	}
+
+	fn intersected_with<'a, R: AsRange<Item=Self::Item>>(&'a self, other: &'a R) -> AnyRange<&'a Self::Item> where Self::Item: PartialOrd + Measure {
+		AnyRange {
+			start: min_bound(self.start(), other.start(), true),
+			end: min_bound(self.end(), other.end(), false)
 		}
 	}
 
@@ -220,10 +239,10 @@ singleton_range!(u32);
 singleton_range!(i32);
 singleton_range!(u64);
 singleton_range!(i64);
-singleton_range!(u128);
-singleton_range!(i128);
-singleton_range!(usize);
-singleton_range!(isize);
+// singleton_range!(u128);
+// singleton_range!(i128);
+// singleton_range!(usize);
+// singleton_range!(isize);
 singleton_range!(f32);
 singleton_range!(f64);
 
@@ -276,136 +295,173 @@ impl<'a, T> AsBound for Bound<&'a T> {
 	}
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Distance {
-	/// Both elements are equals.
-	Zero,
+// #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+// pub enum Distance {
+// 	/// Both elements are equals.
+// 	Equals,
 
-	/// Both elements are different, but there is no element between them.
-	One,
+// 	/// Both elements are different, but there is no element between them.
+// 	Zero,
 
-	/// Both elements are different, and there is only one other elements between them.
-	Two, 
+// 	/// Both elements are different, and there is only one other elements between them.
+// 	One, 
 
-	/// Both elements are different, and there are multiples elements between them.
-	More
+// 	/// Both elements are different, and there are multiples elements between them.
+// 	More
+// }
+
+pub trait PartialEnum: Sized {
+	const MIN: Self;
+	const MAX: Self;
+
+	fn pred(&self) -> Option<Self>;
+
+	fn succ(&self) -> Option<Self>;
 }
 
-/// Distance between singletons.
-pub trait Measure<U = Self> {
-	fn distance(&self, other: &U) -> Distance;
+// /// Distance between singletons.
+pub trait Measure<U = Self>: PartialEnum {
+	type Len: Sized + Default + std::ops::Add<Output=Self::Len> + std::ops::Sub<Output=Self::Len>;
+
+	fn len(&self) -> Self::Len;
+
+	fn distance(&self, other: &U) -> Self::Len;
 }
 
 macro_rules! impl_measure {
-	(@both $ty1:ty, $ty2:ty, $cast:ty) => {
-		impl_measure!($ty1, $ty2, $cast);
-		impl_measure!($ty2, $ty1, $cast);
-	};
-	($ty1:ty, $ty2:ty, $cast:ty) => {
-		impl Measure<$ty2> for $ty1 {
-			fn distance(&self, other: &$ty2) -> Distance {
-				let a = *self as $cast;
-				let b = *other as $cast;
+	(@refl $ty:ty, $len:ty) => {
+		impl PartialEnum for $ty {
+			const MIN: $ty = <$ty>::MIN;
+			const MAX: $ty = <$ty>::MAX;
 
-				let d = if a > b {
+			fn pred(&self) -> Option<Self> {
+				self.checked_sub(1)
+			}
+
+			fn succ(&self) -> Option<Self> {
+				self.checked_add(1)
+			}
+		}
+
+		impl_measure!($ty, $ty, $ty, $len);
+	};
+	(@both $ty1:ty, $ty2:ty, $cast:ty, $len:ty) => {
+		impl_measure!($ty1, $ty2, $cast, $len);
+		impl_measure!($ty2, $ty1, $cast, $len);
+	};
+	($ty1:ty, $ty2:ty, $cast:ty, $len:ty) => {
+		impl Measure<$ty2> for $ty1 {
+			type Len = $len;
+
+			fn len(&self) -> $len {
+				1
+			}
+
+			fn distance(&self, other: &$ty2) -> $len {
+				let a = *self as $len;
+				let b = *other as $len;
+
+				if a > b {
 					a - b
 				} else {
 					b - a
-				};
-
-				match d {
-					0 => Distance::Zero,
-					1 => Distance::One,
-					2 => Distance::Two,
-					_ => Distance::More
 				}
 			}
 		}
 	}
 }
 
-impl_measure!(u8, u8, u8);
-impl_measure!(@both u8, u16, u16);
-impl_measure!(@both u8, u32, u32);
-impl_measure!(@both u8, u64, u64);
-impl_measure!(@both u8, u128, u128);
-impl_measure!(@both u8, usize, usize);
-impl_measure!(@both u8, i8, i16);
-impl_measure!(@both u8, i16, i16);
-impl_measure!(@both u8, i32, i32);
-impl_measure!(@both u8, i64, i64);
-impl_measure!(@both u8, isize, isize);
-impl_measure!(u16, u16, u16);
-impl_measure!(@both u16, u32, u32);
-impl_measure!(@both u16, u64, u64);
-impl_measure!(@both u16, u128, u128);
-impl_measure!(@both u16, usize, usize);
-impl_measure!(@both u16, i8, i32);
-impl_measure!(@both u16, i16, i32);
-impl_measure!(@both u16, i32, i32);
-impl_measure!(@both u16, i64, i64);
-impl_measure!(@both u16, i128, i128);
-impl_measure!(@both u16, isize, isize);
-impl_measure!(u32, u32, u32);
-impl_measure!(@both u32, u64, u64);
-impl_measure!(@both u32, u128, u128);
-impl_measure!(@both u32, usize, usize);
-impl_measure!(@both u32, i8, i16);
-impl_measure!(@both u32, i16, i32);
-impl_measure!(@both u32, i32, i64);
-impl_measure!(@both u32, i64, i64);
-impl_measure!(@both u32, i128, i128);
-impl_measure!(@both u32, isize, isize); // FIXME: only if 64-bit archi.
-impl_measure!(u64, u64, u64);
-impl_measure!(@both u64, u128, u128);
-impl_measure!(@both u64, usize, usize);
-impl_measure!(@both u64, i8, i128);
-impl_measure!(@both u64, i16, i128);
-impl_measure!(@both u64, i32, i128);
-impl_measure!(@both u64, i64, i128);
-impl_measure!(@both u64, i128, i128);
-impl_measure!(u128, u128, u128);
-impl_measure!(i8, i8, i8);
-impl_measure!(@both i8, i16, i16);
-impl_measure!(@both i8, i32, i32);
-impl_measure!(@both i8, i64, i64);
-impl_measure!(@both i8, i128, i128);
-impl_measure!(@both i8, isize, isize);
-impl_measure!(i16, i16, i16);
-impl_measure!(@both i16, i32, i32);
-impl_measure!(@both i16, i64, i64);
-impl_measure!(@both i16, i128, i128);
-impl_measure!(@both i16, isize, isize);
-impl_measure!(i32, i32, i32);
-impl_measure!(@both i32, i64, i64);
-impl_measure!(@both i32, i128, i128);
-impl_measure!(@both i32, isize, isize);
-impl_measure!(i64, i64, i64);
-impl_measure!(@both i64, i128, i128);
-impl_measure!(@both i64, isize, isize); // FIXME: only if 64-bit archi.
-impl_measure!(i128, i128, i128);
-impl_measure!(usize, usize, usize);
-impl_measure!(isize, isize, isize);
+impl_measure!(@refl u8, u16);
+impl_measure!(@both u8, u16, u16, u32);
+impl_measure!(@both u8, u32, u32, u64);
+impl_measure!(@both u8, u64, u64, u128);
+impl_measure!(@both u8, i8, i16, i16);
+impl_measure!(@both u8, i16, i16, i32);
+impl_measure!(@both u8, i32, i32, i64);
+impl_measure!(@both u8, i64, i64, i128);
 
-impl<T: PartialEq<Self>> Measure<T> for f32 {
-	fn distance(&self, other: &T) -> Distance {
-		if *other == *self {
-			Distance::Zero
-		} else {
-			Distance::More
+impl_measure!(@refl u16, u32);
+impl_measure!(@both u16, u32, u32, u64);
+impl_measure!(@both u16, u64, u64, u128);
+impl_measure!(@both u16, i8, i32, i32);
+impl_measure!(@both u16, i16, i32, i32);
+impl_measure!(@both u16, i32, i32, i64);
+impl_measure!(@both u16, i64, i64, i128);
+
+impl_measure!(@refl u32, u64);
+impl_measure!(@both u32, u64, u64, u128);
+impl_measure!(@both u32, i8, i64, i64);
+impl_measure!(@both u32, i16, i64, i64);
+impl_measure!(@both u32, i32, i64, i64);
+impl_measure!(@both u32, i64, i64, i128);
+
+impl_measure!(@refl u64, u128);
+impl_measure!(@both u64, i8, i128, i128);
+impl_measure!(@both u64, i16, i128, i128);
+impl_measure!(@both u64, i32, i128, i128);
+impl_measure!(@both u64, i64, i128, i128);
+
+impl_measure!(@refl i8, i16);
+impl_measure!(@both i8, i16, i16, i32);
+impl_measure!(@both i8, i32, i32, i64);
+impl_measure!(@both i8, i64, i64, i128);
+
+impl_measure!(@refl i16, i32);
+impl_measure!(@both i16, i32, i32, i64);
+impl_measure!(@both i16, i64, i64, i128);
+
+impl_measure!(@refl i32, i64);
+impl_measure!(@both i32, i64, i64, i128);
+
+impl_measure!(@refl i64, i128);
+
+// TODO arch specific impls (for usize/isize).
+
+macro_rules! impl_f_measure {
+	(@refl $ty:ty, $len:ty) => {
+		impl PartialEnum for $ty {
+			const MIN: $ty = <$ty>::MIN;
+			const MAX: $ty = <$ty>::MAX;
+
+			fn pred(&self) -> Option<Self> {
+				None
+			}
+
+			fn succ(&self) -> Option<Self> {
+				None
+			}
+		}
+
+		impl_f_measure!($ty, $ty, $ty, $len);
+	};
+	(@both $ty1:ty, $ty2:ty, $cast:ty, $len:ty) => {
+		impl_f_measure!($ty1, $ty2, $cast, $len);
+		impl_f_measure!($ty2, $ty1, $cast, $len);
+	};
+	($ty1:ty, $ty2:ty, $cast:ty, $len:ty) => {
+		impl Measure<$ty2> for $ty1 {
+			type Len = $len;
+
+			fn len(&self) -> $len {
+				0.0
+			}
+
+			fn distance(&self, other: &$ty2) -> $len {
+				let a = *self as $len;
+				let b = *other as $len;
+
+				if a > b {
+					a - b
+				} else {
+					b - a
+				}
+			}
 		}
 	}
 }
 
-impl<T: PartialEq<Self>> Measure<T> for f64 {
-	fn distance(&self, other: &T) -> Distance {
-		if *other == *self {
-			Distance::Zero
-		} else {
-			Distance::More
-		}
-	}
-}
+impl_f_measure!(@refl f32, f32);
+impl_f_measure!(@refl f64, f64);
 
 #[derive(Debug)]
 pub enum RangeOrdering {
@@ -534,11 +590,75 @@ impl<T, U> PartialOrd<Directed<Bound<&U>>> for Directed<Bound<&T>> where T: Meas
 	}
 }
 
+fn min_bound<'a, T: Measure + PartialOrd>(a: Bound<&'a T>, b: Bound<&'a T>, start: bool) -> Bound<&'a T> {
+	match direct_bound_partial_cmp(a, b, start) {
+		Some(BoundOrdering::Included(_)) => a,
+		_ => b
+	}
+}
+
 fn max_bound<'a, T: Measure + PartialOrd>(a: Bound<&'a T>, b: Bound<&'a T>, start: bool) -> Bound<&'a T> {
 	match direct_bound_partial_cmp(a, b, start) {
 		Some(BoundOrdering::Included(_)) => b,
 		_ => a
 	}
+}
+
+pub enum Dist {
+	Equals,
+	Zero,
+	One,
+	More
+}
+
+fn dist<T, U>(t: &T, u: &U) -> Dist where T: PartialEnum + PartialEq<U> {
+	if t == u {
+		return Dist::Equals
+	}
+
+	match t.succ() {
+		Some(s) => {
+			if s == *u {
+				return Dist::Zero
+			} else {
+				match s.succ() {
+					Some(ss) if ss == *u => return Dist::One,
+					_ => ()
+				}
+			}
+		},
+		_ => ()
+	}
+
+	match t.pred() {
+		Some(s) => {
+			if s == *u {
+				return Dist::Zero
+			} else {
+				match s.pred() {
+					Some(ss) if ss == *u => return Dist::One,
+					_ => ()
+				}
+			}
+		},
+		_ => ()
+	}
+
+	Dist::More
+}
+
+fn distance_zero<T, U>(t: &T, u: &U) -> bool where T: PartialEnum + PartialEq<U> {
+	match t.succ() {
+		Some(s) if s == *u => return true,
+		_ => ()
+	}
+
+	match t.pred() {
+		Some(p) if p == *u => return true,
+		_ => ()
+	}
+
+	false
 }
 
 fn direct_bound_partial_cmp<T, U>(b1: Bound<&T>, b2: Bound<&U>, start: bool) -> Option<BoundOrdering> where T: Measure<U> + PartialOrd<U> {
@@ -552,12 +672,12 @@ fn direct_bound_partial_cmp<T, U>(b1: Bound<&T>, b2: Bound<&U>, start: bool) -> 
 		(Bound::Included(v1), Bound::Included(v2)) => match v1.partial_cmp(v2) {
 			Some(Ordering::Equal) => Some(BoundOrdering::Included(true)),
 			Some(ord) if ord == included_ord => Some(BoundOrdering::Included(false)),
-			Some(_) => Some(BoundOrdering::Excluded(v1.distance(v2) == Distance::One)),
+			Some(_) => Some(BoundOrdering::Excluded(distance_zero(v1, v2))),
 			None => None
 		},
 		(Bound::Included(v1), Bound::Excluded(v2)) => match v1.partial_cmp(v2) {
 			Some(Ordering::Equal) => Some(BoundOrdering::Excluded(true)),
-			Some(ord) if ord == included_ord => Some(BoundOrdering::Included(v1.distance(v2) == Distance::One)),
+			Some(ord) if ord == included_ord => Some(BoundOrdering::Included(distance_zero(v1, v2))),
 			Some(_) => Some(BoundOrdering::Excluded(false)),
 			None => None
 		},
@@ -565,9 +685,9 @@ fn direct_bound_partial_cmp<T, U>(b1: Bound<&T>, b2: Bound<&U>, start: bool) -> 
 		(Bound::Excluded(v1), Bound::Included(v2)) => match v1.partial_cmp(v2) {
 			Some(Ordering::Equal) => Some(BoundOrdering::Included(false)),
 			Some(ord) if ord == included_ord => Some(BoundOrdering::Included(false)),
-			Some(_) => match v1.distance(v2) {
-				Distance::One => Some(BoundOrdering::Included(true)),
-				Distance::Two => Some(BoundOrdering::Excluded(true)),
+			Some(_) => match dist(v1, v2) {
+				Dist::Zero => Some(BoundOrdering::Included(true)),
+				Dist::One => Some(BoundOrdering::Excluded(true)),
 				_ => Some(BoundOrdering::Excluded(false))
 			},
 			None => None
@@ -575,7 +695,7 @@ fn direct_bound_partial_cmp<T, U>(b1: Bound<&T>, b2: Bound<&U>, start: bool) -> 
 		(Bound::Excluded(v1), Bound::Excluded(v2)) => match v1.partial_cmp(v2) {
 			Some(Ordering::Equal) => Some(BoundOrdering::Included(true)),
 			Some(ord) if ord == included_ord => Some(BoundOrdering::Included(false)),
-			Some(_) => Some(BoundOrdering::Excluded(v1.distance(v2) == Distance::One)),
+			Some(_) => Some(BoundOrdering::Excluded(distance_zero(v1, v2))),
 			None => None
 		},
 		(Bound::Excluded(_), Bound::Unbounded) => Some(BoundOrdering::Included(false)),
@@ -603,27 +723,27 @@ fn inverse_bound_partial_cmp<T, U>(b1: Bound<&T>, b2: Bound<&U>, start: bool) ->
 		(Bound::Included(v1), Bound::Included(v2)) => match v1.partial_cmp(v2) {
 			Some(Ordering::Equal) => Some(BoundOrdering::Included(true)),
 			Some(ord) if ord == included_ord => Some(BoundOrdering::Included(false)),
-			Some(_) => Some(BoundOrdering::Excluded(v1.distance(v2) == Distance::One)),
+			Some(_) => Some(BoundOrdering::Excluded(distance_zero(v1, v2))),
 			None => None
 		},
 		(Bound::Included(v1), Bound::Excluded(v2)) => match v1.partial_cmp(v2) {
 			Some(Ordering::Equal) => Some(BoundOrdering::Excluded(true)),
-			Some(ord) if ord == included_ord => Some(BoundOrdering::Included(v1.distance(v2) == Distance::One)),
+			Some(ord) if ord == included_ord => Some(BoundOrdering::Included(distance_zero(v1, v2))),
 			Some(_) => Some(BoundOrdering::Excluded(false)),
 			None => None
 		},
 		(Bound::Included(_), Bound::Unbounded) => Some(BoundOrdering::Included(false)),
 		(Bound::Excluded(v1), Bound::Included(v2)) => match v1.partial_cmp(v2) {
 			Some(Ordering::Equal) => Some(BoundOrdering::Excluded(true)), // []v2=v1
-			Some(ord) if ord == included_ord => Some(BoundOrdering::Included(v1.distance(v2) == Distance::One)),
+			Some(ord) if ord == included_ord => Some(BoundOrdering::Included(distance_zero(v1, v2))),
 			Some(_) => Some(BoundOrdering::Excluded(false)),
 			None => None
 		},
 		(Bound::Excluded(v1), Bound::Excluded(v2)) => match v1.partial_cmp(v2) {
 			Some(Ordering::Equal) => Some(BoundOrdering::Excluded(false)),
-			Some(ord) if ord == included_ord => match v1.distance(v2) {
-				Distance::One => Some(BoundOrdering::Excluded(true)), // v2 [] v1
-				Distance::Two => Some(BoundOrdering::Included(true)), // v2 [ x ] v1
+			Some(ord) if ord == included_ord => match dist(v1, v2) {
+				Dist::Zero => Some(BoundOrdering::Excluded(true)), // v2 [] v1
+				Dist::One => Some(BoundOrdering::Included(true)), // v2 [ x ] v1
 				_ => Some(BoundOrdering::Included(false)) // v2 [ x .. y ] v1
 			},
 			Some(_) => Some(BoundOrdering::Excluded(false)), // ] v1 v2 [ 
