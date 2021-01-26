@@ -24,6 +24,10 @@ impl<T> AnyRange<T> {
 		}
 	}
 
+	fn is_empty(&self) -> bool where T: PartialOrd + Measure {
+		is_range_empty(self.start_bound(), self.end_bound())
+	}
+
 	pub fn len(&self) -> T::Len where T: Measure {
 		match (self.start_bound(), self.end_bound()) {
 			(Bound::Included(a), Bound::Included(b)) => a.distance(b) + b.len(),
@@ -35,6 +39,32 @@ impl<T> AnyRange<T> {
 			(Bound::Unbounded, Bound::Included(b)) => T::MIN.distance(b) + b.len(),
 			(Bound::Unbounded, Bound::Excluded(b)) => T::MIN.distance(b),
 			(Bound::Unbounded, Bound::Unbounded) => T::MIN.distance(&T::MAX)
+		}
+	}
+
+	/// Get the first element of the range if there is one.
+	pub fn first(&self) -> Option<T> where T: PartialOrd + Clone + Measure {
+		if self.is_empty() {
+			None
+		} else {
+			match self.start_bound() {
+				Bound::Included(a) => Some(a.clone()),
+				Bound::Excluded(a) => a.succ(),
+				Bound::Unbounded => Some(T::MIN)
+			}
+		}
+	}
+
+	/// Get the last element of the range if there is one.
+	pub fn last(&self) -> Option<T> where T: PartialOrd + Clone + Measure {
+		if self.is_empty() {
+			None
+		} else {
+			match self.end_bound() {
+				Bound::Included(a) => Some(a.clone()),
+				Bound::Excluded(a) => a.pred(),
+				Bound::Unbounded => Some(T::MAX)
+			}
 		}
 	}
 
@@ -245,6 +275,7 @@ singleton_range!(i64);
 // singleton_range!(isize);
 singleton_range!(f32);
 singleton_range!(f64);
+singleton_range!(char);
 
 macro_rules! standard_range {
 	($ty:path) => {
@@ -326,6 +357,48 @@ pub trait Measure<U = Self>: PartialEnum {
 	fn len(&self) -> Self::Len;
 
 	fn distance(&self, other: &U) -> Self::Len;
+}
+
+impl PartialEnum for char {
+	const MIN: char = '\u{000000}';
+	const MAX: char = '\u{10ffff}';
+
+	fn pred(&self) -> Option<Self> {
+		let c = *self as u32;
+		if c == 0 || c == 0xe000 {
+			None
+		} else {
+			Some(unsafe { std::char::from_u32_unchecked(c - 1) })
+		}
+	}
+
+	fn succ(&self) -> Option<Self> {
+		let c = *self as u32;
+		if c == 0xd7ff || c == 0x10ffff {
+			None
+		} else {
+			Some(unsafe { std::char::from_u32_unchecked(c + 1) })
+		}
+	}
+}
+
+impl Measure for char {
+	type Len = u64;
+
+	fn len(&self) -> u64 {
+		1
+	}
+
+	fn distance(&self, other: &char) -> u64 {
+		let a = *self as u64;
+		let b = *other as u64;
+
+		if a > b {
+			a - b
+		} else {
+			b - a
+		}
+	}
 }
 
 macro_rules! impl_measure {

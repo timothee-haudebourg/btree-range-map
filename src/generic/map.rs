@@ -23,18 +23,21 @@ use crate::{
 	RangePartialOrd
 };
 
-pub struct RangeMap<K, V, C: Slab<Node<AnyRange<K>, V>>> {
+#[derive(Clone)]
+pub struct RangeMap<K, V, C> {
 	btree: BTreeMap<AnyRange<K>, V, C>
 }
 
-impl<K, V, C: Slab<Node<AnyRange<K>, V>>> RangeMap<K, V, C> {
+impl<K, V, C> RangeMap<K, V, C> {
 	/// Create a new empty map.
 	pub fn new() -> RangeMap<K, V, C> where C: Default {
 		RangeMap {
 			btree: BTreeMap::new()
 		}
 	}
+}
 
+impl<K, V, C: Slab<Node<AnyRange<K>, V>>> RangeMap<K, V, C> {
 	pub fn len(&self) -> K::Len where K: Measure {
 		let mut len = K::Len::default();
 		for (range, _) in self {

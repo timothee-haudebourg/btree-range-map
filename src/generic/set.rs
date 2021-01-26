@@ -12,8 +12,17 @@ use crate::{
 	generic::RangeMap
 };
 
-pub struct RangeSet<T, C: Slab<Node<AnyRange<T>, ()>>> {
+#[derive(Clone)]
+pub struct RangeSet<T, C> {
 	map: RangeMap<T, (), C>
+}
+
+impl<T, C> RangeSet<T, C> {
+	pub fn new() -> RangeSet<T, C> where C: Default {
+		RangeSet {
+			map: RangeMap::new()
+		}
+	}
 }
 
 impl<T, C: Slab<Node<AnyRange<T>, ()>>> RangeSet<T, C> {
@@ -40,6 +49,10 @@ impl<'a, T, C: Slab<Node<AnyRange<T>, ()>>> IntoIterator for &'a RangeSet<T, C> 
 impl<T, C: SlabMut<Node<AnyRange<T>, ()>>> RangeSet<T, C> {
 	pub fn insert<R: AsRange<Item=T>>(&mut self, key: R) where T: Clone + PartialOrd + Measure {
 		self.map.insert(key, ())
+	}
+
+	pub fn remove<R: AsRange<Item=T>>(&mut self, key: R) where T: Clone + PartialOrd + Measure {
+		self.map.remove(key)
 	}
 
 	pub fn into_iter(self) -> IntoIter<T, C> {

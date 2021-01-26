@@ -19,8 +19,17 @@ use crate::{
 	}
 };
 
-pub struct RangeMultiMap<K, S, C: Slab<Node<AnyRange<K>, S>>> {
+#[derive(Clone)]
+pub struct RangeMultiMap<K, S, C> {
 	map: RangeMap<K, S, C>
+}
+
+impl<K, S, C> RangeMultiMap<K, S, C> {
+	pub fn new() -> RangeMultiMap<K, S, C> where C: Default {
+		RangeMultiMap {
+			map: RangeMap::new()
+		}
+	}
 }
 
 impl<K, S, C: Slab<Node<AnyRange<K>, S>>> RangeMultiMap<K, S, C> {
