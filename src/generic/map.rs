@@ -20,7 +20,8 @@ use crate::{
 	AsRange,
 	Measure,
 	RangeOrdering,
-	RangePartialOrd
+	RangePartialOrd,
+	Saturating
 };
 
 #[derive(Clone)]
@@ -38,8 +39,8 @@ impl<K, V, C> RangeMap<K, V, C> {
 }
 
 impl<K, V, C: Slab<Node<AnyRange<K>, V>>> RangeMap<K, V, C> {
-	pub fn len(&self) -> K::Len where K: Measure {
-		let mut len = K::Len::default();
+	pub fn len(&self) -> Saturating<K::Len> where K: Measure {
+		let mut len = Saturating::<K::Len>::default();
 		for (range, _) in self {
 			len = len + range.len()
 		}

@@ -1,4 +1,4 @@
-use range_map::RangeMap;
+use btree_range_map::RangeMap;
 
 #[test]
 fn insert_single() {

@@ -1,5 +1,5 @@
 [package]
-name = "range-map"
+name = "btree-range-map"
 version = "0.1.0"
 authors = ["Timothée Haudebourg <timothee.haudebourg@irisa.fr>"]
 edition = "2018"

@@ -7,6 +7,7 @@ use btree_slab::generic::{
 };
 use crate::{
 	Measure,
+	Saturating,
 	AnyRange,
 	AsRange,
 	generic::RangeMap
@@ -26,7 +27,7 @@ impl<T, C> RangeSet<T, C> {
 }
 
 impl<T, C: Slab<Node<AnyRange<T>, ()>>> RangeSet<T, C> {
-	pub fn len(&self) -> T::Len where T: Measure {
+	pub fn len(&self) -> Saturating<T::Len> where T: Measure {
 		self.map.len()
 	}
 

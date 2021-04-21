@@ -10,6 +10,111 @@ use std::{
 	}
 };
 
+pub trait Len: Sized + Default + std::ops::Add<Output=Self> + std::ops::Sub<Output=Self> {
+	fn saturating_add(self, other: Self) -> Saturating<Self>;
+}
+
+macro_rules! impl_len {
+	($ty:ident) => {
+		impl Len for $ty {
+			fn saturating_add(self, other: Self) -> Saturating<Self> {
+				let (result, overflow) = self.overflowing_add(other);
+				if overflow {
+					Saturating::Saturated
+				} else {
+					Saturating::Sub(result)
+				}
+			}
+		}
+	};
+}
+
+impl_len!(u8);
+impl_len!(u16);
+impl_len!(u32);
+impl_len!(u64);
+impl_len!(u128);
+impl_len!(usize);
+impl_len!(i8);
+impl_len!(i16);
+impl_len!(i32);
+impl_len!(i64);
+impl_len!(i128);
+impl_len!(isize);
+
+impl Len for f32 {
+	fn saturating_add(self, other: Self) -> Saturating<Self> {
+		let sum = self + other;
+		if sum.is_infinite() {
+			Saturating::Saturated
+		} else {
+			Saturating::Sub(sum)
+		}
+	}
+}
+
+impl Len for f64 {
+	fn saturating_add(self, other: Self) -> Saturating<Self> {
+		let sum = self + other;
+		if sum.is_infinite() {
+			Saturating::Saturated
+		} else {
+			Saturating::Sub(sum)
+		}
+	}
+}
+
+pub enum Saturating<T> {
+	Saturated,
+	Sub(T)
+}
+
+impl<T: Default> Default for Saturating<T> {
+	fn default() -> Self {
+		Self::Sub(T::default())
+	}
+}
+
+impl<T: Len> std::ops::Add for Saturating<T> {
+	type Output = Self;
+
+	fn add(self, other: Self) -> Self {
+		match (self, other) {
+			(Saturating::Saturated, _) => Self::Saturated,
+			(_, Saturating::Saturated) => Self::Saturated,
+			(Saturating::Sub(a), Saturating::Sub(b)) => {
+				a.saturating_add(b)
+			}
+		}
+	}
+}
+
+impl<T: Len> std::ops::Add<T> for Saturating<T> {
+	type Output = Self;
+
+	fn add(self, other: T) -> Self {
+		match self {
+			Saturating::Saturated => Self::Saturated,
+			Saturating::Sub(t) => {
+				t.saturating_add(other)
+			}
+		}
+	}
+}
+
+impl<T: std::ops::Sub<Output=T>> std::ops::Sub<T> for Saturating<T> {
+	type Output = Self;
+
+	fn sub(self, other: T) -> Self {
+		match self {
+			Saturating::Saturated => Self::Saturated,
+			Saturating::Sub(t) => {
+				Saturating::Sub(t - other)
+			}
+		}
+	}
+}
+
 #[derive(Debug, Clone)]
 pub struct AnyRange<T> {
 	start: Bound<T>,
@@ -24,21 +129,21 @@ impl<T> AnyRange<T> {
 		}
 	}
 
-	fn is_empty(&self) -> bool where T: PartialOrd + Measure {
+	pub fn is_empty(&self) -> bool where T: PartialOrd + Measure {
 		is_range_empty(self.start_bound(), self.end_bound())
 	}
 
-	pub fn len(&self) -> T::Len where T: Measure {
+	pub fn len(&self) -> Saturating<T::Len> where T: Measure {
 		match (self.start_bound(), self.end_bound()) {
-			(Bound::Included(a), Bound::Included(b)) => a.distance(b) + b.len(),
-			(Bound::Included(a), Bound::Excluded(b)) => a.distance(b),
-			(Bound::Included(a), Bound::Unbounded) => a.distance(&T::MAX),
-			(Bound::Excluded(a), Bound::Included(b)) => a.distance(b) - a.len() + b.len(),
-			(Bound::Excluded(a), Bound::Excluded(b)) => a.distance(b) - a.len(),
-			(Bound::Excluded(a), Bound::Unbounded) => a.distance(&T::MAX) - a.len(),
-			(Bound::Unbounded, Bound::Included(b)) => T::MIN.distance(b) + b.len(),
-			(Bound::Unbounded, Bound::Excluded(b)) => T::MIN.distance(b),
-			(Bound::Unbounded, Bound::Unbounded) => T::MIN.distance(&T::MAX)
+			(Bound::Included(a), Bound::Included(b)) => a.distance(Saturating::Sub(b)) + b.len(),
+			(Bound::Included(a), Bound::Excluded(b)) => a.distance(Saturating::Sub(b)),
+			(Bound::Included(a), Bound::Unbounded) => a.distance(Saturating::Saturated),
+			(Bound::Excluded(a), Bound::Included(b)) => a.distance(Saturating::Sub(b)) - a.len() + b.len(),
+			(Bound::Excluded(a), Bound::Excluded(b)) => a.distance(Saturating::Sub(b)) - a.len(),
+			(Bound::Excluded(a), Bound::Unbounded) => a.distance(Saturating::Saturated) - a.len(),
+			(Bound::Unbounded, Bound::Included(b)) => T::MIN.distance(Saturating::Sub(b)) + b.len(),
+			(Bound::Unbounded, Bound::Excluded(b)) => T::MIN.distance(Saturating::Sub(b)),
+			(Bound::Unbounded, Bound::Unbounded) => T::MIN.distance(Saturating::Saturated)
 		}
 	}
 
@@ -271,7 +376,7 @@ singleton_range!(u64);
 singleton_range!(i64);
 // singleton_range!(u128);
 // singleton_range!(i128);
-// singleton_range!(usize);
+singleton_range!(usize);
 // singleton_range!(isize);
 singleton_range!(f32);
 singleton_range!(f64);
@@ -342,6 +447,8 @@ impl<'a, T> AsBound for Bound<&'a T> {
 // }
 
 pub trait PartialEnum: Sized {
+	const INFINITE_MIN: Self;
+
 	const MIN: Self;
 	const MAX: Self;
 
@@ -352,14 +459,15 @@ pub trait PartialEnum: Sized {
 
 // /// Distance between singletons.
 pub trait Measure<U = Self>: PartialEnum {
-	type Len: Sized + Default + std::ops::Add<Output=Self::Len> + std::ops::Sub<Output=Self::Len>;
+	type Len: Len;
 
 	fn len(&self) -> Self::Len;
 
-	fn distance(&self, other: &U) -> Self::Len;
+	fn distance(&self, other: Saturating<&U>) -> Saturating<Self::Len>;
 }
 
 impl PartialEnum for char {
+	const INFINITE_MIN: char = '\u{000000}';
 	const MIN: char = '\u{000000}';
 	const MAX: char = '\u{10ffff}';
 
@@ -383,27 +491,39 @@ impl PartialEnum for char {
 }
 
 impl Measure for char {
-	type Len = u64;
+	type Len = u32;
 
-	fn len(&self) -> u64 {
+	fn len(&self) -> u32 {
 		1
 	}
 
-	fn distance(&self, other: &char) -> u64 {
-		let a = *self as u64;
-		let b = *other as u64;
+	fn distance(&self, other: Saturating<&char>) -> Saturating<u32> {
+		match other {
+			Saturating::Saturated => {
+				if *self as u32 == 0 {
+					Saturating::Saturated
+				} else {
+					Saturating::Sub(u32::MAX - *self as u32 + 1)
+				}
+			},
+			Saturating::Sub(other) => {
+				let a = *self as u32;
+				let b = *other as u32;
 
-		if a > b {
-			a - b
-		} else {
-			b - a
+				if a > b {
+					Saturating::Sub(a - b)
+				} else {
+					Saturating::Sub(b - a)
+				}
+			}
 		}
 	}
 }
 
 macro_rules! impl_measure {
-	(@refl $ty:ty, $len:ty) => {
+	(@refl $ty:ty, $cast: ty, $len:ty) => {
 		impl PartialEnum for $ty {
+			const INFINITE_MIN: $ty = <$ty>::MIN;
 			const MIN: $ty = <$ty>::MIN;
 			const MAX: $ty = <$ty>::MAX;
 
@@ -416,7 +536,7 @@ macro_rules! impl_measure {
 			}
 		}
 
-		impl_measure!($ty, $ty, $ty, $len);
+		impl_measure!($ty, $ty, $cast, $len);
 	};
 	(@both $ty1:ty, $ty2:ty, $cast:ty, $len:ty) => {
 		impl_measure!($ty1, $ty2, $cast, $len);
@@ -430,69 +550,81 @@ macro_rules! impl_measure {
 				1
 			}
 
-			fn distance(&self, other: &$ty2) -> $len {
-				let a = *self as $len;
-				let b = *other as $len;
-
-				if a > b {
-					a - b
-				} else {
-					b - a
+			fn distance(&self, other: Saturating<&$ty2>) -> Saturating<$len> {
+				match other {
+					Saturating::Saturated => {
+						if *self == Self::MIN {
+							Saturating::Saturated
+						} else {
+							Saturating::Sub((Self::MAX as $cast - *self as $cast) as $len + 1)
+						}
+					},
+					Saturating::Sub(other) => {
+						let a = *self as $cast;
+						let b = *other as $cast;
+		
+						if a > b {
+							Saturating::Sub((a - b) as $len)
+						} else {
+							Saturating::Sub((b - a) as $len)
+						}
+					}
 				}
 			}
 		}
 	}
 }
 
-impl_measure!(@refl u8, u16);
-impl_measure!(@both u8, u16, u16, u32);
-impl_measure!(@both u8, u32, u32, u64);
-impl_measure!(@both u8, u64, u64, u128);
-impl_measure!(@both u8, i8, i16, i16);
-impl_measure!(@both u8, i16, i16, i32);
-impl_measure!(@both u8, i32, i32, i64);
-impl_measure!(@both u8, i64, i64, i128);
+impl_measure!(@refl u8, u8, u8);
+impl_measure!(@both u8, u16, u16, u16);
+impl_measure!(@both u8, u32, u32, u32);
+impl_measure!(@both u8, u64, u64, u64);
+impl_measure!(@both u8, i8, i16, u16);
+impl_measure!(@both u8, i16, i16, u16);
+impl_measure!(@both u8, i32, i32, u32);
+impl_measure!(@both u8, i64, i64, u64);
 
-impl_measure!(@refl u16, u32);
-impl_measure!(@both u16, u32, u32, u64);
-impl_measure!(@both u16, u64, u64, u128);
-impl_measure!(@both u16, i8, i32, i32);
-impl_measure!(@both u16, i16, i32, i32);
-impl_measure!(@both u16, i32, i32, i64);
-impl_measure!(@both u16, i64, i64, i128);
+impl_measure!(@refl u16, u16, u16);
+impl_measure!(@both u16, u32, u32, u32);
+impl_measure!(@both u16, u64, u64, u64);
+impl_measure!(@both u16, i8, i32, u32);
+impl_measure!(@both u16, i16, i32, u32);
+impl_measure!(@both u16, i32, i64, u32);
+impl_measure!(@both u16, i64, i128, u64);
 
-impl_measure!(@refl u32, u64);
-impl_measure!(@both u32, u64, u64, u128);
-impl_measure!(@both u32, i8, i64, i64);
-impl_measure!(@both u32, i16, i64, i64);
-impl_measure!(@both u32, i32, i64, i64);
-impl_measure!(@both u32, i64, i64, i128);
+impl_measure!(@refl u32, u32, u32);
+impl_measure!(@both u32, u64, u64, u64);
+impl_measure!(@both u32, i8, i64, u64);
+impl_measure!(@both u32, i16, i64, u64);
+impl_measure!(@both u32, i32, i64, u64);
+impl_measure!(@both u32, i64, i128, u64);
 
-impl_measure!(@refl u64, u128);
-impl_measure!(@both u64, i8, i128, i128);
-impl_measure!(@both u64, i16, i128, i128);
-impl_measure!(@both u64, i32, i128, i128);
-impl_measure!(@both u64, i64, i128, i128);
+impl_measure!(@refl u64, u64, u64);
+impl_measure!(@both u64, i8, i128, u128);
+impl_measure!(@both u64, i16, i128, u128);
+impl_measure!(@both u64, i32, i128, u128);
+impl_measure!(@both u64, i64, i128, u128);
 
-impl_measure!(@refl i8, i16);
-impl_measure!(@both i8, i16, i16, i32);
-impl_measure!(@both i8, i32, i32, i64);
-impl_measure!(@both i8, i64, i64, i128);
+impl_measure!(@refl i8, i16, u8);
+impl_measure!(@both i8, i16, i32, u16);
+impl_measure!(@both i8, i32, i64, u32);
+impl_measure!(@both i8, i64, i128, u64);
 
-impl_measure!(@refl i16, i32);
-impl_measure!(@both i16, i32, i32, i64);
-impl_measure!(@both i16, i64, i64, i128);
+impl_measure!(@refl i16, i32, u16);
+impl_measure!(@both i16, i32, i64, u32);
+impl_measure!(@both i16, i64, i128, u64);
 
-impl_measure!(@refl i32, i64);
-impl_measure!(@both i32, i64, i64, i128);
+impl_measure!(@refl i32, i64, u32);
+impl_measure!(@both i32, i64, i128, u64);
 
-impl_measure!(@refl i64, i128);
+impl_measure!(@refl i64, i128, u64);
 
-// TODO arch specific impls (for usize/isize).
+impl_measure!(@refl usize, usize, usize);
 
 macro_rules! impl_f_measure {
 	(@refl $ty:ty, $len:ty) => {
 		impl PartialEnum for $ty {
+			const INFINITE_MIN: $ty = <$ty>::NEG_INFINITY;
 			const MIN: $ty = <$ty>::MIN;
 			const MAX: $ty = <$ty>::MAX;
 
@@ -519,14 +651,23 @@ macro_rules! impl_f_measure {
 				0.0
 			}
 
-			fn distance(&self, other: &$ty2) -> $len {
-				let a = *self as $len;
-				let b = *other as $len;
-
-				if a > b {
-					a - b
+			fn distance(&self, other: Saturating<&$ty2>) -> Saturating<$len> {
+				if self.is_infinite() {
+					Saturating::Saturated
 				} else {
-					b - a
+					match other {
+						Saturating::Saturated => Saturating::Saturated,
+						Saturating::Sub(other) => {
+							let a = *self as $cast;
+							let b = *other as $cast;
+			
+							if a > b {
+								Saturating::Sub((a - b) as $len)
+							} else {
+								Saturating::Sub((b - a) as $len)
+							}
+						}
+					}
 				}
 			}
 		}
