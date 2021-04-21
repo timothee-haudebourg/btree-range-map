@@ -16,12 +16,14 @@ use btree_slab::generic::{
 	}
 };
 use crate::{
+	util::{
+		Measure,
+		Saturating
+	},
 	AnyRange,
 	AsRange,
-	Measure,
 	RangeOrdering,
-	RangePartialOrd,
-	Saturating
+	RangePartialOrd
 };
 
 #[derive(Clone)]

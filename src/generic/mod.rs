@@ -1,7 +1,7 @@
-mod map;
-mod set;
-mod multimap;
+pub mod map;
+pub mod set;
+pub mod multimap;
 
-pub use map::*;
-pub use set::*;
-pub use multimap::*;
+pub use map::RangeMap;
+pub use set::RangeSet;
+pub use multimap::RangeMultiMap;

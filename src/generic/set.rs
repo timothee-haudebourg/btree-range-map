@@ -6,8 +6,10 @@ use btree_slab::generic::{
 	Node
 };
 use crate::{
-	Measure,
-	Saturating,
+	util::{
+		Measure,
+		Saturating
+	},
 	AnyRange,
 	AsRange,
 	generic::RangeMap

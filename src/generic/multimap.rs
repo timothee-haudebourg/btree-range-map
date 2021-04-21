@@ -7,7 +7,7 @@ use btree_slab::generic::{
 	Node
 };
 use crate::{
-	Measure,
+	util::Measure,
 	AnyRange,
 	AsRange,
 	generic::{
