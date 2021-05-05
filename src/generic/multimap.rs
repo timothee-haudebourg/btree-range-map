@@ -32,6 +32,12 @@ impl<K, S, C> RangeMultiMap<K, S, C> {
 	}
 }
 
+impl<K, S, C: Default> Default for RangeMultiMap<K, S, C> {
+	fn default() -> Self {
+		Self::new()
+	}
+}
+
 impl<K, S, C: Slab<Node<AnyRange<K>, S>>> RangeMultiMap<K, S, C> {
 	pub fn iter(&self) -> Iter<K, S, C> {
 		self.map.iter()

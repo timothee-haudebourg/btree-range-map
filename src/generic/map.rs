@@ -1,3 +1,7 @@
+use std::hash::{
+	Hash,
+	Hasher
+};
 use cc_traits::{
 	Slab,
 	SlabMut
@@ -18,7 +22,8 @@ use btree_slab::generic::{
 use crate::{
 	util::{
 		Measure,
-		Saturating
+		Saturating,
+		PartialEnum
 	},
 	AnyRange,
 	AsRange,
@@ -37,6 +42,12 @@ impl<K, V, C> RangeMap<K, V, C> {
 		RangeMap {
 			btree: BTreeMap::new()
 		}
+	}
+}
+
+impl<K, T, C: Default> Default for RangeMap<K, T, C> {
+	fn default() -> Self {
+		Self::new()
 	}
 }
 
@@ -128,6 +139,22 @@ impl<K, V, C: Slab<Node<AnyRange<K>, V>>> RangeMap<K, V, C> {
 
 	pub fn iter(&self) -> Iter<K, V, C> {
 		self.btree.iter()
+	}
+}
+
+impl<K, L, V, W, C: Slab<Node<AnyRange<K>, V>>, D: Slab<Node<AnyRange<L>, W>>> PartialEq<RangeMap<L, W, D>> for RangeMap<K, V, C> where L: Measure<K> + PartialOrd<K>, W: PartialEq<V> {
+	fn eq(&self, other: &RangeMap<L, W, D>) -> bool {
+		self.btree == other.btree
+	}
+}
+
+impl<K, V, C: Slab<Node<AnyRange<K>, V>>> Eq for RangeMap<K, V, C> where K: Measure + Ord, V: Eq {}
+
+impl<K, V, C: Slab<Node<AnyRange<K>, V>>> Hash for RangeMap<K, V, C> where K: Hash + PartialEnum, V: Hash {
+	fn hash<H: Hasher>(&self, h: &mut H) {
+		for range in self {
+			range.hash(h)
+		}
 	}
 }
 
@@ -478,7 +505,6 @@ pub fn binary_search<T: Measure + PartialOrd, U, V, I: AsRef<Item<AnyRange<T>, V
 			let k = (i + j) / 2;
 
 			if let Some(ord) = element.range_partial_cmp(items[k].as_ref().key()) {
-				eprintln!("ord: {:?}", ord);
 				if ord.is_before(connected) {
 					j = k;
 				} else {

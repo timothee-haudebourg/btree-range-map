@@ -1,7 +1,12 @@
 use std::{
 	ops::Bound,
-	cmp::Ordering
+	cmp::Ordering,
+	hash::{
+		Hash,
+		Hasher
+	}
 };
+use crate::util::PartialEnum;
 use super::{
 	BoundOrdering,
 	BoundPartialOrd,
@@ -60,6 +65,37 @@ impl<T> Directed<Bound<T>> {
 				Bound::Excluded(b) => Bound::Excluded(b),
 				Bound::Unbounded => Bound::Unbounded
 			})
+		}
+	}
+}
+
+impl<'a, T> Directed<Bound<&'a T>> {
+	pub fn hash<H: Hasher>(&self, h: &mut H) where T: Hash + PartialEnum {
+		match self {
+			Directed::Start(b) => {
+				match b {
+					Bound::Included(b) => b.hash(h),
+					Bound::Excluded(b) => {
+						match b.succ() {
+							Some(c) => c.hash(h),
+							None => b.hash(h)
+						}
+					},
+					Bound::Unbounded => ()
+				}
+			},
+			Directed::End(b) => {
+				match b {
+					Bound::Included(b) => b.hash(h),
+					Bound::Excluded(b) => {
+						match b.pred() {
+							Some(c) => c.hash(h),
+							None => b.hash(h)
+						}
+					},
+					Bound::Unbounded => ()
+				}
+			}
 		}
 	}
 }

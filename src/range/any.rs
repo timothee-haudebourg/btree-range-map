@@ -1,5 +1,14 @@
-use std::ops::RangeBounds;
-use crate::util::Saturating;
+use std::{
+	ops::RangeBounds,
+	hash::{
+		Hash,
+		Hasher
+	}
+};
+use crate::util::{
+	Saturating,
+	PartialEnum
+};
 use super::{
 	Bound,
 	AsRange,
@@ -76,12 +85,51 @@ impl<T> AnyRange<T> {
 	pub fn intersects<S>(&self, other: &S) -> bool where T: Measure + PartialOrd, S: RangeBounds<T> {
 		Directed::End(self.end_bound()) > Directed::Start(other.start_bound()) && Directed::End(other.end_bound()) > Directed::Start(self.start_bound())
 	}
+
+	pub fn pick_in_intersection<S>(&self, other: &S) -> Option<T> where T: Measure + Clone + PartialOrd, S: AsRange + RangeBounds<T> {
+		if self.intersects(other) {
+			if Directed::End(self.end_bound()) <= Directed::End(other.end_bound()) {
+				if other.is_empty() {
+					None
+				} else {
+					// pick between other.start and self.end
+					Some(match other.start_bound() {
+						Bound::Included(a) => a.clone(),
+						Bound::Excluded(a) => a.succ().unwrap(),
+						Bound::Unbounded => T::MIN
+					})
+				}
+			} else {
+				if self.is_empty() {
+					None
+				} else {
+					// pick between self.start and other.end
+					Some(match self.start_bound() {
+						Bound::Included(a) => a.clone(),
+						Bound::Excluded(a) => a.succ().unwrap(),
+						Bound::Unbounded => T::MIN
+					})
+				}
+			}
+		} else {
+			None
+		}
+	}
 }
 
 impl<T, U> PartialEq<AnyRange<U>> for AnyRange<T> where T: Measure<U> + PartialOrd<U> {
 	fn eq(&self, other: &AnyRange<U>) -> bool {
 		direct_bound_partial_eq(self.start_bound(), other.start_bound(), true) &&
 		direct_bound_partial_eq(self.end_bound(), other.end_bound(), false)
+	}
+}
+
+impl<T> Eq for AnyRange<T> where T: Measure + Ord {}
+
+impl<T> Hash for AnyRange<T> where T: Hash + PartialEnum {
+	fn hash<H: Hasher>(&self, h: &mut H) {
+		Directed::Start(self.start_bound()).hash(h);
+		Directed::End(self.end_bound()).hash(h);
 	}
 }
 

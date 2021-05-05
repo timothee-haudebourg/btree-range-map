@@ -1,3 +1,7 @@
+use std::hash::{
+	Hash,
+	Hasher
+};
 use cc_traits::{
 	Slab,
 	SlabMut
@@ -8,7 +12,8 @@ use btree_slab::generic::{
 use crate::{
 	util::{
 		Measure,
-		Saturating
+		Saturating,
+		PartialEnum
 	},
 	AnyRange,
 	AsRange,
@@ -25,6 +30,12 @@ impl<T, C> RangeSet<T, C> {
 		RangeSet {
 			map: RangeMap::new()
 		}
+	}
+}
+
+impl<T, C: Default> Default for RangeSet<T, C> {
+	fn default() -> Self {
+		Self::new()
 	}
 }
 
@@ -62,6 +73,20 @@ impl<T, C: SlabMut<Node<AnyRange<T>, ()>>> RangeSet<T, C> {
 		IntoIter {
 			inner: self.map.into_iter()
 		}
+	}
+}
+
+impl<K, L, C: Slab<Node<AnyRange<K>, ()>>, D: Slab<Node<AnyRange<L>, ()>>> PartialEq<RangeSet<L, D>> for RangeSet<K, C> where L: Measure<K> + PartialOrd<K> {
+	fn eq(&self, other: &RangeSet<L, D>) -> bool {
+		self.map == other.map
+	}
+}
+
+impl<K, C: Slab<Node<AnyRange<K>, ()>>> Eq for RangeSet<K, C> where K: Measure + Ord {}
+
+impl<K, C: Slab<Node<AnyRange<K>, ()>>> Hash for RangeSet<K, C> where K: Hash + PartialEnum {
+	fn hash<H: Hasher>(&self, h: &mut H) {
+		self.map.hash(h)
 	}
 }
 
