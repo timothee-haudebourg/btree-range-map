@@ -3,6 +3,11 @@ use std::{
 	hash::{
 		Hash,
 		Hasher
+	},
+	cmp::{
+		PartialOrd,
+		Ord,
+		Ordering
 	}
 };
 use crate::util::{
@@ -11,12 +16,15 @@ use crate::util::{
 };
 use super::{
 	Bound,
+	BoundOrdering,
 	AsRange,
 	Directed,
 	Measure,
 	is_range_empty,
 	max_bound,
-	direct_bound_partial_eq
+	direct_bound_partial_eq,
+	direct_bound_partial_cmp,
+	direct_bound_cmp
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -49,6 +57,10 @@ impl<T> AnyRange<T> {
 			(Bound::Unbounded, Bound::Excluded(b)) => T::MIN.distance(Saturating::Sub(b)),
 			(Bound::Unbounded, Bound::Unbounded) => T::MIN.distance(Saturating::Saturated)
 		}
+	}
+
+	pub fn pick(&self) -> Option<T> where T: PartialOrd + Clone + Measure {
+		self.first().or_else(|| self.last())
 	}
 
 	/// Get the first element of the range if there is one.
@@ -125,6 +137,42 @@ impl<T, U> PartialEq<AnyRange<U>> for AnyRange<T> where T: Measure<U> + PartialO
 }
 
 impl<T> Eq for AnyRange<T> where T: Measure + Ord {}
+
+impl<T, U> PartialOrd<AnyRange<U>> for AnyRange<T> where T: Measure<U> + PartialOrd<U> {
+	fn partial_cmp(&self, other: &AnyRange<U>) -> Option<Ordering> {
+		// Directed::Start(self.start_bound()).partial_cmp(Directed::Start(other.start_bound()))
+		match direct_bound_partial_cmp(self.start_bound(), other.start_bound(), true) {
+			Some(BoundOrdering::Excluded(_)) => Some(Ordering::Less),
+			Some(BoundOrdering::Included(false)) => Some(Ordering::Greater),
+			Some(BoundOrdering::Included(true)) => {
+				match direct_bound_partial_cmp(self.end_bound(), other.end_bound(), false) {
+					Some(BoundOrdering::Excluded(_)) => Some(Ordering::Greater),
+					Some(BoundOrdering::Included(false)) => Some(Ordering::Less),
+					Some(BoundOrdering::Included(true)) => Some(Ordering::Equal),
+					None => None
+				}
+			},
+			None => None
+		}
+	}
+}
+
+impl<T> Ord for AnyRange<T> where T: Measure + Ord {
+	fn cmp(&self, other: &Self) -> Ordering {
+		// Directed::Start(self.start_bound()).partial_cmp(Directed::Start(other.start_bound()))
+		match direct_bound_cmp(self.start_bound(), other.start_bound(), true) {
+			BoundOrdering::Excluded(_) => Ordering::Less,
+			BoundOrdering::Included(false) => Ordering::Greater,
+			BoundOrdering::Included(true) => {
+				match direct_bound_cmp(self.end_bound(), other.end_bound(), false) {
+					BoundOrdering::Excluded(_) => Ordering::Greater,
+					BoundOrdering::Included(false) => Ordering::Less,
+					BoundOrdering::Included(true) => Ordering::Equal
+				}
+			}
+		}
+	}
+}
 
 impl<T> Hash for AnyRange<T> where T: Hash + PartialEnum {
 	fn hash<H: Hasher>(&self, h: &mut H) {

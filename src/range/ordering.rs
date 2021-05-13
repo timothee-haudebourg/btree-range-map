@@ -195,45 +195,45 @@ pub(crate) fn direct_bound_partial_cmp<T, U>(b1: Bound<&T>, b2: Bound<&U>, start
 	}
 }
 
-// pub(crate) fn direct_bound_cmp<T>(b1: Bound<&T>, b2: Bound<&T>, start: bool) -> BoundOrdering where T: Measure + Ord {
-// 	let included_ord = if start {
-// 		Ordering::Greater
-// 	} else {
-// 		Ordering::Less
-// 	};
+pub(crate) fn direct_bound_cmp<T>(b1: Bound<&T>, b2: Bound<&T>, start: bool) -> BoundOrdering where T: Measure + Ord {
+	let included_ord = if start {
+		Ordering::Greater
+	} else {
+		Ordering::Less
+	};
 
-// 	match (b1, b2) {
-// 		(Bound::Included(v1), Bound::Included(v2)) => match v1.cmp(v2) {
-// 			Ordering::Equal => BoundOrdering::Included(true),
-// 			ord if ord == included_ord => BoundOrdering::Included(false),
-// 			_ => BoundOrdering::Excluded(distance_zero(v1, v2))
-// 		},
-// 		(Bound::Included(v1), Bound::Excluded(v2)) => match v1.cmp(v2) {
-// 			Ordering::Equal => BoundOrdering::Excluded(true),
-// 			ord if ord == included_ord => BoundOrdering::Included(distance_zero(v1, v2)),
-// 			_ => BoundOrdering::Excluded(false)
-// 		},
-// 		(Bound::Included(_), Bound::Unbounded) => BoundOrdering::Included(false),
-// 		(Bound::Excluded(v1), Bound::Included(v2)) => match v1.cmp(v2) {
-// 			Ordering::Equal => BoundOrdering::Included(false),
-// 			ord if ord == included_ord => BoundOrdering::Included(false),
-// 			_ => match dist(v1, v2) {
-// 				Dist::Zero => BoundOrdering::Included(true),
-// 				Dist::One => BoundOrdering::Excluded(true),
-// 				_ => BoundOrdering::Excluded(false)
-// 			}
-// 		},
-// 		(Bound::Excluded(v1), Bound::Excluded(v2)) => match v1.cmp(v2) {
-// 			Ordering::Equal => BoundOrdering::Included(true),
-// 			ord if ord == included_ord => BoundOrdering::Included(false),
-// 			_ => BoundOrdering::Excluded(distance_zero(v1, v2))
-// 		},
-// 		(Bound::Excluded(_), Bound::Unbounded) => BoundOrdering::Included(false),
-// 		(Bound::Unbounded, Bound::Included(_)) => BoundOrdering::Excluded(false),
-// 		(Bound::Unbounded, Bound::Excluded(_)) => BoundOrdering::Excluded(false),
-// 		(Bound::Unbounded, Bound::Unbounded) => BoundOrdering::Included(true)
-// 	}
-// }
+	match (b1, b2) {
+		(Bound::Included(v1), Bound::Included(v2)) => match v1.cmp(v2) {
+			Ordering::Equal => BoundOrdering::Included(true),
+			ord if ord == included_ord => BoundOrdering::Included(false),
+			_ => BoundOrdering::Excluded(distance_zero(v1, v2))
+		},
+		(Bound::Included(v1), Bound::Excluded(v2)) => match v1.cmp(v2) {
+			Ordering::Equal => BoundOrdering::Excluded(true),
+			ord if ord == included_ord => BoundOrdering::Included(distance_zero(v1, v2)),
+			_ => BoundOrdering::Excluded(false)
+		},
+		(Bound::Included(_), Bound::Unbounded) => BoundOrdering::Included(false),
+		(Bound::Excluded(v1), Bound::Included(v2)) => match v1.cmp(v2) {
+			Ordering::Equal => BoundOrdering::Included(false),
+			ord if ord == included_ord => BoundOrdering::Included(false),
+			_ => match dist(v1, v2) {
+				Dist::Zero => BoundOrdering::Included(true),
+				Dist::One => BoundOrdering::Excluded(true),
+				_ => BoundOrdering::Excluded(false)
+			}
+		},
+		(Bound::Excluded(v1), Bound::Excluded(v2)) => match v1.cmp(v2) {
+			Ordering::Equal => BoundOrdering::Included(true),
+			ord if ord == included_ord => BoundOrdering::Included(false),
+			_ => BoundOrdering::Excluded(distance_zero(v1, v2))
+		},
+		(Bound::Excluded(_), Bound::Unbounded) => BoundOrdering::Included(false),
+		(Bound::Unbounded, Bound::Included(_)) => BoundOrdering::Excluded(false),
+		(Bound::Unbounded, Bound::Excluded(_)) => BoundOrdering::Excluded(false),
+		(Bound::Unbounded, Bound::Unbounded) => BoundOrdering::Included(true)
+	}
+}
 
 pub(crate) fn direct_bound_partial_eq<T, U>(b1: Bound<&T>, b2: Bound<&U>, start: bool) -> bool where T: Measure<U> + PartialOrd<U> {
 	match direct_bound_partial_cmp(b1, b2, start) {

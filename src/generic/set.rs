@@ -1,6 +1,11 @@
-use std::hash::{
-	Hash,
-	Hasher
+use std::{
+	hash::{
+		Hash,
+		Hasher
+	},
+	cmp::{
+		Ordering
+	}
 };
 use cc_traits::{
 	Slab,
@@ -83,6 +88,18 @@ impl<K, L, C: Slab<Node<AnyRange<K>, ()>>, D: Slab<Node<AnyRange<L>, ()>>> Parti
 }
 
 impl<K, C: Slab<Node<AnyRange<K>, ()>>> Eq for RangeSet<K, C> where K: Measure + Ord {}
+
+impl<K, L, C: Slab<Node<AnyRange<K>, ()>>, D: Slab<Node<AnyRange<L>, ()>>> PartialOrd<RangeSet<L, D>> for RangeSet<K, C> where L: Measure<K> + PartialOrd<K> {
+	fn partial_cmp(&self, other: &RangeSet<L, D>) -> Option<Ordering> {
+		self.map.partial_cmp(&other.map)
+	}
+}
+
+impl<K, C: Slab<Node<AnyRange<K>, ()>>> Ord for RangeSet<K, C> where K: Measure + Ord {
+	fn cmp(&self, other: &Self) -> Ordering {
+		self.map.cmp(&other.map)
+	}
+}
 
 impl<K, C: Slab<Node<AnyRange<K>, ()>>> Hash for RangeSet<K, C> where K: Hash + PartialEnum {
 	fn hash<H: Hasher>(&self, h: &mut H) {

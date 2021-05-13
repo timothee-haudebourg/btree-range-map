@@ -59,7 +59,7 @@ pub trait AsRange: Sized {
 
 	fn intersected_with<'a, R: AsRange<Item=Self::Item>>(&'a self, other: &'a R) -> AnyRange<&'a Self::Item> where Self::Item: PartialOrd + Measure {
 		AnyRange {
-			start: min_bound(self.start(), other.start(), true),
+			start: max_bound(self.start(), other.start(), true),
 			end: min_bound(self.end(), other.end(), false)
 		}
 	}

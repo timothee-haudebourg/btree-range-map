@@ -13,6 +13,14 @@ pub trait Measure<U = Self>: PartialEnum {
 	fn distance(&self, other: Saturating<&U>) -> Saturating<Self::Len>;
 }
 
+// impl<'a, U, T: Measure<U>> Measure<U> for &'a T {
+// 	type Len = T::Len;
+
+// 	fn len(&self) -> Self::Len {
+// 		(*self).len()
+// 	}
+// }
+
 impl Measure for char {
 	type Len = u32;
 

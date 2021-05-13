@@ -1,6 +1,13 @@
-use std::hash::{
-	Hash,
-	Hasher
+use std::{
+	hash::{
+		Hash,
+		Hasher
+	},
+	cmp::{
+		PartialOrd,
+		Ord,
+		Ordering
+	}
 };
 use cc_traits::{
 	Slab,
@@ -150,6 +157,18 @@ impl<K, L, V, W, C: Slab<Node<AnyRange<K>, V>>, D: Slab<Node<AnyRange<L>, W>>> P
 
 impl<K, V, C: Slab<Node<AnyRange<K>, V>>> Eq for RangeMap<K, V, C> where K: Measure + Ord, V: Eq {}
 
+impl<K, L, V, W, C: Slab<Node<AnyRange<K>, V>>, D: Slab<Node<AnyRange<L>, W>>> PartialOrd<RangeMap<L, W, D>> for RangeMap<K, V, C> where L: Measure<K> + PartialOrd<K>, W: PartialOrd<V> {
+	fn partial_cmp(&self, other: &RangeMap<L, W, D>) -> Option<Ordering> {
+		self.btree.partial_cmp(&other.btree)
+	}
+}
+
+impl<K, V, C: Slab<Node<AnyRange<K>, V>>> Ord for RangeMap<K, V, C> where K: Measure + Ord, V: Ord {
+	fn cmp(&self, other: &Self) -> Ordering {
+		self.btree.cmp(&other.btree)
+	}
+}
+
 impl<K, V, C: Slab<Node<AnyRange<K>, V>>> Hash for RangeMap<K, V, C> where K: Hash + PartialEnum, V: Hash {
 	fn hash<H: Hasher>(&self, h: &mut H) {
 		for range in self {
@@ -169,7 +188,12 @@ impl<'a, K, V, C: Slab<Node<AnyRange<K>, V>>> IntoIterator for &'a RangeMap<K, V
 
 impl<K, V, C: SlabMut<Node<AnyRange<K>, V>>> RangeMap<K, V, C> {
 	pub fn update<R: AsRange<Item=K>, F>(&mut self, key: R, f: F) where K: Clone + PartialOrd + Measure, F: Fn(Option<&V>) -> Option<V>, V: PartialEq + Clone {
+		// for (range, _) in self.iter() {
+		// 	debug_assert!(!range.is_empty());
+		// }
+		
 		let key = AnyRange::from(key);
+		debug_assert!(!key.is_empty());
 		match self.address_of(&key, true) {
 			Ok(mut addr) => {
 				let mut next_addr = None;
@@ -181,6 +205,8 @@ impl<K, V, C: SlabMut<Node<AnyRange<K>, V>>> RangeMap<K, V, C> {
 						(Some(left), Some(right)) => {
 							let left = left.cloned();
 							let right = right.cloned();
+							debug_assert!(!left.is_empty());
+							debug_assert!(!right.is_empty());
 
 							match f(Some(item.value())) {
 								Some(new_value) => { // new value to insert.
@@ -213,6 +239,7 @@ impl<K, V, C: SlabMut<Node<AnyRange<K>, V>>> RangeMap<K, V, C> {
 						},
 						(Some(left), None) => { // case (B)
 							let left = left.cloned();
+							debug_assert!(!left.is_empty());
 
 							match f(Some(item.value())) {
 								Some(mut new_value) => { // new value to insert.
@@ -229,6 +256,7 @@ impl<K, V, C: SlabMut<Node<AnyRange<K>, V>>> RangeMap<K, V, C> {
 										}
 									} else {
 										let right = key.intersected_with(item.key()).cloned();
+										debug_assert!(!right.is_empty());
 										if same_as_next {
 											let item = self.btree.item_mut(addr).unwrap();
 											*item.key_mut() = left;
@@ -255,7 +283,6 @@ impl<K, V, C: SlabMut<Node<AnyRange<K>, V>>> RangeMap<K, V, C> {
 						},
 						(None, Some(right)) => {
 							let right = right.cloned();
-
 							match f(Some(item.value())) {
 								Some(new_value) => {
 									if item.value() == &new_value {
@@ -264,6 +291,7 @@ impl<K, V, C: SlabMut<Node<AnyRange<K>, V>>> RangeMap<K, V, C> {
 										let item = self.btree.item_mut(addr).unwrap();
 										*item.key_mut() = right;
 										let left = key.intersected_with(item.key()).cloned();
+										debug_assert!(!left.is_empty());
 										addr = self.btree.insert_at(addr, Item::new(left, new_value));
 									}
 								},
@@ -282,6 +310,7 @@ impl<K, V, C: SlabMut<Node<AnyRange<K>, V>>> RangeMap<K, V, C> {
 										let item_key = item.key().clone();
 										let next_item = self.btree.item_mut(next_addr.unwrap()).unwrap();
 										next_item.key_mut().add(&item_key);
+										debug_assert!(!next_item.key().is_empty());
 									} else {
 										let item = self.btree.item_mut(addr).unwrap();
 										item.set_value(new_value);
@@ -312,6 +341,10 @@ impl<K, V, C: SlabMut<Node<AnyRange<K>, V>>> RangeMap<K, V, C> {
 					None => () // nothing to do.
 				}
 			}
+		}
+
+		for (range, _) in self.iter() {
+			debug_assert!(!range.is_empty());
 		}
 	}
 
