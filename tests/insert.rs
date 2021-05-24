@@ -150,11 +150,37 @@ fn insert_merge_ranges() {
 }
 
 #[test]
+fn update_merge_ranges() {
+	let mut range_map: RangeMap<i32, bool> = RangeMap::new();
+
+	range_map.insert(00..10, true);
+	range_map.update(10..20, |_| Some(true));
+
+	assert_eq!(range_map.range_count(), 1);
+	assert_eq!(range_map.get(0), Some(&true));
+	assert_eq!(range_map.get(19), Some(&true));
+	assert_eq!(range_map.get(20), None);
+}
+
+#[test]
 fn insert_merge_ranges_rev() {
 	let mut range_map: RangeMap<i32, bool> = RangeMap::new();
 
 	range_map.insert(10..20, true);
 	range_map.insert(00..10, true);
+
+	assert_eq!(range_map.range_count(), 1);
+	assert_eq!(range_map.get(0), Some(&true));
+	assert_eq!(range_map.get(19), Some(&true));
+	assert_eq!(range_map.get(20), None);
+}
+
+#[test]
+fn update_merge_ranges_rev() {
+	let mut range_map: RangeMap<i32, bool> = RangeMap::new();
+
+	range_map.insert(10..20, true);
+	range_map.update(0..10, |_| Some(true));
 
 	assert_eq!(range_map.range_count(), 1);
 	assert_eq!(range_map.get(0), Some(&true));

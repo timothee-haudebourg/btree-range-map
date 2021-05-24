@@ -64,7 +64,7 @@ pub trait AsRange: Sized {
 		}
 	}
 
-	fn without<'a, R: AsRange<Item=Self::Item>>(&'a self, other: &'a R) -> (Option<AnyRange<&'a Self::Item>>, Option<AnyRange<&'a Self::Item>>) {
+	fn without<'a, R: AsRange<Item=Self::Item>>(&'a self, other: &'a R) -> Difference<&'a Self::Item> where Self::Item: PartialOrd + Measure {
 		let left = match invert_bound(other.start()) {
 			Some(inverted_other_start) => if !is_range_empty(self.start(), inverted_other_start) {
 				Some(AnyRange {
@@ -89,8 +89,33 @@ pub trait AsRange: Sized {
 			None => None
 		};
 
-		(left, right)
+		match (left, right) {
+			(Some(left), None) => Difference::Before(left, Directed::End(left.end) >= Directed::Start(other.start())),
+			(None, Some(right)) => Difference::After(right, Directed::Start(right.start) <= Directed::End(other.end())),
+			(Some(left), Some(right)) => Difference::Split(left, right),
+			(None, None) => Difference::Empty
+		}
 	}
+}
+
+pub enum RelativePosition {
+	Before,
+	After
+}
+
+/// Result of a `without` operation.
+pub enum Difference<T> {
+	/// The end of the range may intersects `other`. The boolean is set to true if it does.
+	Before(AnyRange<T>, bool),
+
+	/// The begining of the range may intersects `other`. The boolean is set to true if it does.
+	After(AnyRange<T>, bool),
+	
+	/// The `other` range if fully included.
+	Split(AnyRange<T>, AnyRange<T>),
+
+	/// The range is fully included in `other`.
+	Empty
 }
 
 macro_rules! singleton_range {

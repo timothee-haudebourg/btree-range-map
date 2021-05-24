@@ -35,7 +35,8 @@ use crate::{
 	AnyRange,
 	AsRange,
 	RangeOrdering,
-	RangePartialOrd
+	RangePartialOrd,
+	range::Difference
 };
 
 #[derive(Clone)]
@@ -202,7 +203,7 @@ impl<K, V, C: SlabMut<Node<AnyRange<K>, V>>> RangeMap<K, V, C> {
 				loop {
 					let item = self.btree.item(addr).unwrap();
 					match item.key().without(&key) {
-						(Some(left), Some(right)) => {
+						Difference::Split(left, right) => {
 							let left = left.cloned();
 							let right = right.cloned();
 							debug_assert!(!left.is_empty());
@@ -237,11 +238,17 @@ impl<K, V, C: SlabMut<Node<AnyRange<K>, V>>> RangeMap<K, V, C> {
 							// we know nothing on the left intersects the input range.
 							break // we are done
 						},
-						(Some(left), None) => { // case (B)
+						Difference::Before(left, intersects) => { // case (B1)
 							let left = left.cloned();
 							debug_assert!(!left.is_empty());
 
-							match f(Some(item.value())) {
+							let intersection = if intersects {
+								Some(item.value())
+							} else {
+								None
+							};
+
+							match f(intersection) {
 								Some(mut new_value) => { // new value to insert.
 									let same_as_prev = item.value() == &new_value;
 									let same_as_next = next_addr.map(|next_addr| self.btree.item(next_addr).unwrap().value() == &new_value).unwrap_or(false);
@@ -252,10 +259,16 @@ impl<K, V, C: SlabMut<Node<AnyRange<K>, V>>> RangeMap<K, V, C> {
 											next_item.key_mut().add(&left); // also absorb left
 											self.btree.remove_at(addr);
 										} else {
-											// nothing to do.
+											let item = self.btree.item_mut(addr).unwrap();
+											item.key_mut().add(&key);
 										}
 									} else {
-										let right = key.intersected_with(item.key()).cloned();
+										let right = if intersects {
+											key.intersected_with(item.key()).cloned()
+										} else {
+											key
+										};
+
 										debug_assert!(!right.is_empty());
 										if same_as_next {
 											let item = self.btree.item_mut(addr).unwrap();
@@ -281,16 +294,30 @@ impl<K, V, C: SlabMut<Node<AnyRange<K>, V>>> RangeMap<K, V, C> {
 							// we know nothing on the left intersects the input range.
 							break // we are done
 						},
-						(None, Some(right)) => {
+						Difference::After(right, intersects) => {
 							let right = right.cloned();
-							match f(Some(item.value())) {
+
+							let intersection = if intersects {
+								Some(item.value())
+							} else {
+								None
+							};
+
+							match f(intersection) {
 								Some(new_value) => {
 									if item.value() == &new_value {
-										// nothing to do.
+										let item = self.btree.item_mut(addr).unwrap();
+										item.key_mut().add(&key);
 									} else {
 										let item = self.btree.item_mut(addr).unwrap();
 										*item.key_mut() = right;
-										let left = key.intersected_with(item.key()).cloned();
+
+										let left = if intersects {
+											key.intersected_with(item.key()).cloned()
+										} else {
+											key.clone()
+										};
+										
 										debug_assert!(!left.is_empty());
 										addr = self.btree.insert_at(addr, Item::new(left, new_value));
 									}
@@ -301,7 +328,7 @@ impl<K, V, C: SlabMut<Node<AnyRange<K>, V>>> RangeMap<K, V, C> {
 								}
 							}
 						},
-						(None, None) => {
+						Difference::Empty => {
 							match f(Some(item.value())) {
 								Some(new_value) => {
 									let same_as_next = next_addr.map(|next_addr| self.btree.item(next_addr).unwrap().value() == &new_value).unwrap_or(false);
@@ -359,7 +386,7 @@ impl<K, V, C: SlabMut<Node<AnyRange<K>, V>>> RangeMap<K, V, C> {
 				loop {
 					let item = self.btree.item(addr).unwrap();
 					match item.key().without(&key) {
-						(Some(left), Some(right)) => {
+						Difference::Split(left, right) => {
 							let left = left.cloned();
 							let right = right.cloned();
 
@@ -380,7 +407,7 @@ impl<K, V, C: SlabMut<Node<AnyRange<K>, V>>> RangeMap<K, V, C> {
 							// we know nothing on the left intersects the input range.
 							break // we are done
 						},
-						(Some(left), None) => {
+						Difference::Before(left, _) => {
 							let left = left.cloned();
 
 							let same_as_prev = item.value() == &value;
@@ -410,7 +437,7 @@ impl<K, V, C: SlabMut<Node<AnyRange<K>, V>>> RangeMap<K, V, C> {
 							// we know nothing on the left intersects the input range.
 							break // we are done
 						},
-						(None, Some(right)) => {
+						Difference::After(right, _) => {
 							let right = right.cloned();
 
 							if item.value() == &value {
@@ -422,7 +449,7 @@ impl<K, V, C: SlabMut<Node<AnyRange<K>, V>>> RangeMap<K, V, C> {
 								addr = self.btree.insert_at(addr, Item::new(key.clone().into(), value.clone()));
 							}
 						},
-						(None, None) => {
+						Difference::Empty => {
 							let same_as_next = next_addr.map(|next_addr| self.btree.item(next_addr).unwrap().value() == &value).unwrap_or(false);
 								
 							if same_as_next {
@@ -459,7 +486,7 @@ impl<K, V, C: SlabMut<Node<AnyRange<K>, V>>> RangeMap<K, V, C> {
 				loop {
 					if self.btree.item(addr).map(|item| item.key().intersects(&key)).unwrap_or(false) {
 						match self.btree.item(addr).unwrap().key().without(&key) {
-							(Some(left), Some(right)) => {
+							Difference::Split(left, right) => {
 								let left = left.cloned();
 								let right = right.cloned();
 
@@ -471,18 +498,18 @@ impl<K, V, C: SlabMut<Node<AnyRange<K>, V>>> RangeMap<K, V, C> {
 								self.btree.insert_at(addr, Item::new(left, right_value));
 								break // no need to go further, the removed range was totaly included in this one.
 							},
-							(Some(left), None) => {
+							Difference::Before(left, _) => {
 								let left = left.cloned();
 								let item = self.btree.item_mut(addr).unwrap();
 								*item.key_mut() = left;
 								break // no need to go further, the removed range does not intersect anything below this range.
 							},
-							(None, Some(right)) => {
+							Difference::After(right, _) => {
 								let right = right.cloned();
 								let item = self.btree.item_mut(addr).unwrap();
 								*item.key_mut() = right;
 							},
-							(None, None) => {
+							Difference::Empty => {
 								let (_, next_addr) = self.btree.remove_at(addr).unwrap();
 								addr = next_addr
 							}
@@ -655,5 +682,47 @@ mod tests {
 		assert_eq!(binary_search(items![0.0, 3.0, 6.0], &5.0, true), Some(1));
 		assert_eq!(binary_search(items![0.0, 3.0, 6.0], &6.0, true), Some(2));
 		assert_eq!(binary_search(items![0.0, 3.0, 6.0], &7.0, true), Some(2));
+	}
+
+	#[test]
+	fn insert() {
+		let mut map: crate::RangeMap<char, usize> = crate::RangeMap::new();
+
+		map.insert('+', 0);
+		map.insert('-', 1);
+		map.insert('0'..='9', 2);
+		map.insert('.', 3);
+
+		assert_eq!(*map.get('.').unwrap(), 3)
+	}
+
+	#[test]
+	fn update_connected_after() {
+		let mut map: crate::RangeMap<char, usize> = crate::RangeMap::new();
+
+		map.insert('+', 0);
+		map.insert('-', 1);
+		map.insert('0'..='9', 2);
+		map.update('.', |binding| {
+			assert!(binding.is_none());
+			Some(3)
+		});
+
+		assert_eq!(*map.get('.').unwrap(), 3)
+	}
+
+	#[test]
+	fn update_connected_before() {
+		let mut map: crate::RangeMap<char, usize> = crate::RangeMap::new();
+
+		map.insert('+', 0);
+		map.insert('.', 1);
+		map.insert('0'..='9', 2);
+		map.update('-', |binding| {
+			assert!(binding.is_none());
+			Some(3)
+		});
+
+		assert_eq!(*map.get('-').unwrap(), 3)
 	}
 }

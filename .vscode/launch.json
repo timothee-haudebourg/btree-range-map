@@ -7,16 +7,16 @@
 		{
 			"type": "lldb",
 			"request": "launch",
-			"name": "Debug unit tests in library 'range-map'",
+			"name": "Debug unit tests in library 'btree-range-map'",
 			"cargo": {
 				"args": [
 					"test",
 					"--no-run",
 					"--lib",
-					"--package=range-map"
+					"--package=btree-range-map"
 				],
 				"filter": {
-					"name": "range-map",
+					"name": "btree-range-map",
 					"kind": "lib"
 				}
 			},
@@ -32,7 +32,7 @@
 					"test",
 					"--no-run",
 					"--test=insert",
-					"--package=range-map"
+					"--package=btree-range-map"
 				],
 				"filter": {
 					"name": "insert",
@@ -51,7 +51,7 @@
 					"test",
 					"--no-run",
 					"--test=remove",
-					"--package=range-map"
+					"--package=btree-range-map"
 				],
 				"filter": {
 					"name": "remove",
