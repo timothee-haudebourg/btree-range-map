@@ -96,6 +96,105 @@ pub trait AsRange: Sized {
 			(None, None) => Difference::Empty
 		}
 	}
+
+	fn product<'a, R: AsRange<Item=Self::Item>>(&'a self, other: &'a R) -> Product<&'a Self::Item> where Self::Item: PartialOrd + Measure {
+		let before = match crop_right(self, other.start()) {
+			Some(self_before) => Some(ProductArg::Subject(self_before)),
+			None => crop_right(other, self.start()).map(ProductArg::Object)
+		};
+
+		let intersection = self.intersected_with(other);
+		let intersection = if is_range_empty(intersection.start, intersection.end) {
+			None
+		} else {
+			Some(intersection)
+		};
+
+		let after = match crop_left(self, other.end()) {
+			Some(self_after) => Some(ProductArg::Subject(self_after)),
+			None => crop_left(other, self.end()).map(ProductArg::Object)
+		};
+
+		Product {
+			before,
+			intersection,
+			after
+		}
+	}
+}
+
+fn crop_left<'a, R: AsRange>(range: &'a R, other_end: Bound<&'a R::Item>) -> Option<AnyRange<&'a R::Item>> {
+	match invert_bound(other_end) {
+		Some(inverted_other_end) => {
+			let max_start = max_bound(range.start(), inverted_other_end, true);
+			if !is_range_empty(max_start, range.end()) {
+				Some(AnyRange {
+					start: inverted_other_end,
+					end: range.end()
+				})
+			} else {
+				None
+			}
+		},
+		None => None
+	}
+}
+
+fn crop_right<'a, R: AsRange>(range: &'a R, other_start: Bound<&'a R::Item>) -> Option<AnyRange<&'a R::Item>> {
+	match invert_bound(other_start) {
+		Some(inverted_other_start) => {
+			let min_end = min_bound(range.end(), inverted_other_start, false);
+			if !is_range_empty(range.start(), min_end) {
+				Some(AnyRange {
+					start: range.start(),
+					end: min_end
+				})
+			} else {
+				None
+			}
+		},
+		None => None
+	}
+}
+
+/// Part of the result of a `product` operation.
+pub enum ProductArg<T> {
+	/// A part of the subject, `self`.
+	Subject(AnyRange<T>),
+
+	/// A part of the object, `other`.
+	Object(AnyRange<T>)
+}
+
+impl<'a, T: Clone> ProductArg<&'a T> {
+	pub fn cloned(&self) -> ProductArg<T> {
+		match self {
+			ProductArg::Subject(range) => ProductArg::Subject(range.cloned()),
+			ProductArg::Object(range) => ProductArg::Object(range.cloned())
+		}
+	}
+}
+
+/// Result of a `product` operation.
+pub struct Product<T> {
+	/// What is left of `self` and `other` before their intersection.
+	pub before: Option<ProductArg<T>>,
+
+	/// The intersection of `self` and `other`, if not empty.
+	pub intersection: Option<AnyRange<T>>,
+
+	/// What is left of `self` and `other` after their intersection.
+	pub after: Option<ProductArg<T>>,
+}
+
+impl<'a, T: Clone> Product<&'a T> {
+	pub fn cloned(&self) -> Product<T> {
+		Product {
+			before: self.before.as_ref().map(|r| r.cloned()),
+			intersection: self.intersection.as_ref().map(|r| r.cloned()),
+			after: self.after.as_ref().map(|r| r.cloned()),
+		}
+	}
 }
 
 pub enum RelativePosition {

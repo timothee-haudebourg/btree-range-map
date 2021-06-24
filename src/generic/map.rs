@@ -36,7 +36,11 @@ use crate::{
 	AsRange,
 	RangeOrdering,
 	RangePartialOrd,
-	range::Difference
+	range::{
+		Difference,
+		ProductArg,
+		invert_bound
+	}
 };
 
 #[derive(Clone)]
@@ -188,176 +192,244 @@ impl<'a, K, V, C: Slab<Node<AnyRange<K>, V>>> IntoIterator for &'a RangeMap<K, V
 }
 
 impl<K, V, C: SlabMut<Node<AnyRange<K>, V>>> RangeMap<K, V, C> {
+	fn merge_forward(
+		&mut self,
+		addr: Address,
+		next_addr: Option<Address>,
+	) where K: Clone + PartialOrd + Measure, V: PartialEq {
+		if let Some(next_addr) = next_addr {
+			let item = self.btree.item(addr).unwrap();
+			let next_item = self.btree.item(next_addr).unwrap();
+			if item.key().connected_to(next_item.key()) {
+				if item.value() == next_item.value() {
+					let (removed_item, non_normalized_new_addr) = self.btree.remove_at(addr).unwrap();
+					let new_addr = self.btree.normalize(non_normalized_new_addr).unwrap();
+					let item = self.btree.item_mut(new_addr).unwrap();
+					item.key_mut().add(removed_item.key());
+				}
+			}
+		}
+	}
+
+	fn set_item_key(
+		&mut self,
+		addr: Address,
+		next_addr: Option<Address>,
+		new_key: AnyRange<K>
+	) -> (Address, Option<Address>) where K: Clone + PartialOrd + Measure, V: PartialEq {
+		if let Some(next_addr) = next_addr {
+			let next_item = self.btree.item(next_addr).unwrap();
+			if new_key.connected_to(next_item.key()) {
+				if next_item.value() == self.btree.item(addr).unwrap().value() {
+					// Merge with the next item.
+					let (_, non_normalized_new_addr) = self.btree.remove_at(next_addr).unwrap();
+					let new_addr = self.btree.normalize(non_normalized_new_addr).unwrap();
+					let item = self.btree.item_mut(new_addr).unwrap();
+					item.key_mut().add(&new_key);
+					
+					return (new_addr, self.btree.next_item_address(new_addr))
+				}
+			}
+		}
+
+		let item = self.btree.item_mut(addr).unwrap();
+		*item.key_mut() = new_key;
+		(addr, next_addr)
+	}
+
+	fn set_item(
+		&mut self,
+		addr: Address,
+		next_addr: Option<Address>,
+		new_key: AnyRange<K>,
+		new_value: V
+	) -> (Address, Option<Address>, V) where K: Clone + PartialOrd + Measure, V: PartialEq {
+		if let Some(next_addr) = next_addr {
+			let next_item = self.btree.item(next_addr).unwrap();
+			if new_key.connected_to(next_item.key()) {
+				if *next_item.value() == new_value {
+					// Merge with the next item.
+					let (removed_item, non_normalized_new_addr) = self.btree.remove_at(addr).unwrap();
+					let new_addr = self.btree.normalize(non_normalized_new_addr).unwrap();
+					let item = self.btree.item_mut(new_addr).unwrap();
+					item.key_mut().add(&new_key);
+					
+					return (new_addr, self.btree.next_item_address(new_addr), removed_item.into_value())
+				}
+			}
+		}
+
+		let item = self.btree.item_mut(addr).unwrap();
+		let removed_value = item.set_value(new_value);
+		*item.key_mut() = new_key;
+		(addr, next_addr, removed_value)
+	}
+
+	fn insert_item(
+		&mut self,
+		addr: Address,
+		key: AnyRange<K>,
+		value: V
+	) -> (Address, Option<Address>) where K: Clone + PartialOrd + Measure, V: PartialEq {
+		let next_item = self.btree.item(addr).unwrap();
+		if key.connected_to(next_item.key()) {
+			if *next_item.value() == value {
+				// Merge with the next item.
+				let item = self.btree.item_mut(addr).unwrap();
+				item.key_mut().add(&key);
+				
+				return (addr, self.btree.next_item_address(addr))
+			}
+		}
+
+		let new_addr = self.btree.insert_at(addr, Item::new(key, value));
+		(new_addr, self.btree.next_item_address(new_addr))
+	}
+
+	fn remove_item(
+		&mut self,
+		addr: Address
+	) -> (Address, Option<Address>) {
+		let (_, non_normalized_addr) = self.btree.remove_at(addr).unwrap();
+		let new_addr = self.btree.previous_item_address(non_normalized_addr).unwrap();
+		(new_addr, self.btree.normalize(non_normalized_addr))
+	}
+
 	pub fn update<R: AsRange<Item=K>, F>(&mut self, key: R, f: F) where K: Clone + PartialOrd + Measure, F: Fn(Option<&V>) -> Option<V>, V: PartialEq + Clone {
-		// for (range, _) in self.iter() {
-		// 	debug_assert!(!range.is_empty());
-		// }
+		let mut key = AnyRange::from(key);
 		
-		let key = AnyRange::from(key);
-		debug_assert!(!key.is_empty());
+		if key.is_empty() {
+			return
+		}
+
 		match self.address_of(&key, true) {
 			Ok(mut addr) => {
-				let mut next_addr = None;
+				let mut next_addr = self.btree.next_item_address(addr);
 
-				// some work to do here...
 				loop {
-					let item = self.btree.item(addr).unwrap();
-					match item.key().without(&key) {
-						Difference::Split(left, right) => {
-							let left = left.cloned();
-							let right = right.cloned();
-							debug_assert!(!left.is_empty());
-							debug_assert!(!right.is_empty());
+					let (prev_addr, prev_next_addr) = {
+						let product = key.product(self.btree.item(addr).unwrap().key()).cloned();
 
-							match f(Some(item.value())) {
-								Some(new_value) => { // new value to insert.
-									if item.value() == &new_value {
-										// nothing to do.
-									} else {
-										let right_value = {
-											let item = self.btree.item_mut(addr).unwrap();
-											*item.key_mut() = right;
-											item.value().clone()
-										};
-										
-										addr = self.btree.insert_at(addr, Item::new(key.into(), new_value));
-										self.btree.insert_at(addr, Item::new(left, right_value));
-									}
-								},
-								None => { // remove the item (split this range in two)
-									let right_value = {
-										let item = self.btree.item_mut(addr).unwrap();
-										*item.key_mut() = right;
-										item.value().clone()
-									};
-									self.btree.insert_at(addr, Item::new(left, right_value));
-								}
-							}
+						let mut removed_item_value = None;
 
-							// Because we have `Some(left)`
-							// we know nothing on the left intersects the input range.
-							break // we are done
-						},
-						Difference::Before(left, intersects) => { // case (B1)
-							let left = left.cloned();
-							debug_assert!(!left.is_empty());
+						let (addr, next_addr) = match product.after {
+							Some(ProductArg::Subject(key_after)) => {
+								match f(None) {
+									Some(value) => {
+										let (new_addr, new_next_addr, removed_value) = self.set_item(addr, next_addr, key_after, value);
+										removed_item_value = Some(removed_value);
+										(new_addr, new_next_addr)
+									},
+									None => (addr, next_addr) // we wait the last minute to remove the item.
+								}									
+							},
+							Some(ProductArg::Object(item_after)) => {
+								let item = self.btree.item_mut(addr).unwrap();
+								item.set_key(item_after);
+								removed_item_value = Some(item.value().clone());
+								(addr, next_addr)
+							},
+							None => (addr, next_addr) // we wait the last minute to remove the item.
+						};
 
-							let intersection = if intersects {
-								Some(item.value())
-							} else {
-								None
-							};
+						let (addr, next_addr) = match product.intersection {
+							Some(intersection) => {
+								let new_value = match removed_item_value.as_ref() {
+									Some(value) => f(Some(value)),
+									None => f(Some(self.btree.item(addr).unwrap().value()))
+								};
 
-							match f(intersection) {
-								Some(mut new_value) => { // new value to insert.
-									let same_as_prev = item.value() == &new_value;
-									let same_as_next = next_addr.map(|next_addr| self.btree.item(next_addr).unwrap().value() == &new_value).unwrap_or(false);
-
-									if same_as_prev {
-										if same_as_next {
-											let next_item = self.btree.item_mut(next_addr.unwrap()).unwrap();
-											next_item.key_mut().add(&left); // also absorb left
-											self.btree.remove_at(addr);
+								match new_value {
+									Some(new_value) => {
+										if removed_item_value.is_some() {
+											let (new_addr, new_next_addr) = self.insert_item(addr, intersection, new_value);
+											(new_addr, new_next_addr)
 										} else {
-											let item = self.btree.item_mut(addr).unwrap();
-											item.key_mut().add(&key);
+											let (new_addr, new_next_addr, removed_value) = self.set_item(addr, next_addr, intersection, new_value);
+											removed_item_value = Some(removed_value);
+											(new_addr, new_next_addr)
 										}
-									} else {
-										let right = if intersects {
-											key.intersected_with(item.key()).cloned()
+									},
+									None => (addr, next_addr) // we wait the last minute to remove the item.
+								}
+							},
+							None => (addr, next_addr) // we wait the last minute to remove the item.
+						};
+
+						match product.before {
+							Some(ProductArg::Subject(key_before)) => {
+								match self.btree.previous_item_address(addr) {
+									Some(prev_addr) if self.btree.item(prev_addr).unwrap().key().connected_to(&key_before) => {
+										let (prev_addr, addr) = if removed_item_value.is_none() {
+											self.remove_item(addr)
 										} else {
-											key
+											(prev_addr, Some(addr))
 										};
 
-										debug_assert!(!right.is_empty());
-										if same_as_next {
-											let item = self.btree.item_mut(addr).unwrap();
-											*item.key_mut() = left;
+										// Let's go for another turn!
+										// One item back this time.
+										key = key_before;
+										(prev_addr, addr)
+									},
+									_ => { // there is no previous connected item, we must insert here!
+										match f(None) {
+											Some(value) => {
+												if removed_item_value.is_some() { // we cannot reuse the item
+													// insert
+													self.insert_item(addr, key_before, value);
+												} else { // we can reuse the item
+													// reuse
+													self.set_item(addr, next_addr, key_before, value);
+												}
+											},
+											None => {
+												if removed_item_value.is_none() {
+													self.btree.remove_at(addr); // finally remove the item.
+												}
+											}
+										}
 
-											let next_item = self.btree.item_mut(next_addr.unwrap()).unwrap();
-											next_item.key_mut().add(&right);
+										break
+									}
+								}
+							},
+							Some(ProductArg::Object(item_before)) => {
+								match removed_item_value {
+									Some(value) => {
+										self.insert_item(addr, item_before, value);
+									},
+									None => {
+										self.set_item_key(addr, next_addr, item_before);
+									}
+								}
+
+								break
+							},
+							None => {
+								match self.btree.previous_item_address(addr) {
+									Some(prev_addr) => {
+										let (prev_addr, addr) = if removed_item_value.is_none() {
+											self.remove_item(addr)
 										} else {
-											let item = self.btree.item_mut(addr).unwrap();
-											std::mem::swap(item.value_mut(), &mut new_value);
-											*item.key_mut() = right;
-											self.btree.insert_at(addr, Item::new(left, new_value));
+											(prev_addr, Some(addr))
+										};
+
+										self.merge_forward(prev_addr, addr)
+									},
+									_ => {
+										if removed_item_value.is_none() {
+											self.btree.remove_at(addr).unwrap();
 										}
 									}
-								},
-								None => {
-									let item = self.btree.item_mut(addr).unwrap();
-									*item.key_mut() = left;
 								}
-							}
 
-							// Because we have `Some(left)`
-							// we know nothing on the left intersects the input range.
-							break // we are done
-						},
-						Difference::After(right, intersects) => {
-							let right = right.cloned();
-
-							let intersection = if intersects {
-								Some(item.value())
-							} else {
-								None
-							};
-
-							match f(intersection) {
-								Some(new_value) => {
-									if item.value() == &new_value {
-										let item = self.btree.item_mut(addr).unwrap();
-										item.key_mut().add(&key);
-									} else {
-										let item = self.btree.item_mut(addr).unwrap();
-										*item.key_mut() = right;
-
-										let left = if intersects {
-											key.intersected_with(item.key()).cloned()
-										} else {
-											key.clone()
-										};
-										
-										debug_assert!(!left.is_empty());
-										addr = self.btree.insert_at(addr, Item::new(left, new_value));
-									}
-								},
-								None => {
-									let item = self.btree.item_mut(addr).unwrap();
-									*item.key_mut() = right;
-								}
-							}
-						},
-						Difference::Empty => {
-							match f(Some(item.value())) {
-								Some(new_value) => {
-									let same_as_next = next_addr.map(|next_addr| self.btree.item(next_addr).unwrap().value() == &new_value).unwrap_or(false);
-								
-									if same_as_next {
-										let item_key = item.key().clone();
-										let next_item = self.btree.item_mut(next_addr.unwrap()).unwrap();
-										next_item.key_mut().add(&item_key);
-										debug_assert!(!next_item.key().is_empty());
-									} else {
-										let item = self.btree.item_mut(addr).unwrap();
-										item.set_value(new_value);
-									}
-								},
-								None => {
-									addr = self.btree.remove_at(addr).unwrap().1;
-								}
+								break
 							}
 						}
-					}
+					};
 
-					// go to the previous item is it also intersects the input range.
-					match self.btree.previous_item_address(addr) {
-						Some(prev_addr) if self.btree.item(prev_addr).unwrap().key().connected_to(&key) => {
-							next_addr = Some(addr);
-							addr = prev_addr
-						},
-						_ => break // otherwise we're done.
-					}
+					addr = prev_addr;
+					next_addr = prev_next_addr;
 				}
 			},
 			Err(addr) => { // case (G)
@@ -376,101 +448,178 @@ impl<K, V, C: SlabMut<Node<AnyRange<K>, V>>> RangeMap<K, V, C> {
 	}
 
 	/// Insert a new key-value binding.
-	pub fn insert<R: AsRange<Item=K>>(&mut self, key: R, mut value: V) where K: Clone + PartialOrd + Measure, V: PartialEq + Clone {
-		let key = AnyRange::from(key);
+	pub fn insert<R: AsRange<Item=K>>(&mut self, key: R, value: V) where K: Clone + PartialOrd + Measure, V: PartialEq + Clone {
+		let mut key = AnyRange::from(key);
+
+		if key.is_empty() {
+			return
+		}
+
 		match self.address_of(&key, true) {
 			Ok(mut addr) => {
-				let mut next_addr = None;
+				// let mut value = Some(value);
+				let mut next_addr = self.btree.next_item_address(addr);
 
-				// some work to do here...
 				loop {
-					let item = self.btree.item(addr).unwrap();
-					match item.key().without(&key) {
-						Difference::Split(left, right) => {
-							let left = left.cloned();
-							let right = right.cloned();
+					let (prev_addr, prev_next_addr) = {
+						let product = key.product(self.btree.item(addr).unwrap().key()).cloned();
 
-							if item.value() == &value {
-								// nothing to do.
-							} else {
-								let right_value = {
-									let item = self.btree.item_mut(addr).unwrap();
-									*item.key_mut() = right;
-									item.value().clone()
-								};
-								
-								addr = self.btree.insert_at(addr, Item::new(key.into(), value));
-								self.btree.insert_at(addr, Item::new(left, right_value));
-							}
+						let mut removed_item_value = None;
 
-							// Because we have `Some(left)`
-							// we know nothing on the left intersects the input range.
-							break // we are done
-						},
-						Difference::Before(left, _) => {
-							let left = left.cloned();
+						match product.after {
+							Some(ProductArg::Object(item_after)) => {
+								let item = self.btree.item_mut(addr).unwrap();
+								item.set_key(item_after);
+								removed_item_value = Some(item.value().clone());
+							},
+							_ => () // we wait the last moment to remove the item.
+						}
 
-							let same_as_prev = item.value() == &value;
-							let same_as_next = next_addr.is_some();
-
-							if same_as_prev {
-								if same_as_next {
-									let next_item = self.btree.item_mut(next_addr.unwrap()).unwrap();
-									next_item.key_mut().add(&left);
-									self.btree.remove_at(addr);
-								} else {
-									let item = self.btree.item_mut(addr).unwrap();
-									item.key_mut().add(&key);
+						match product.before {
+							Some(ProductArg::Object(item_before)) => {
+								match removed_item_value {
+									Some(old_value) => {
+										if old_value == value {
+											key.add(&item_before);
+											self.insert_item(addr, key, value);
+										} else {
+											let (addr, _) = self.insert_item(addr, key, value);
+											self.insert_item(addr, item_before, old_value);
+										}
+									},
+									None => {
+										if *self.btree.item(addr).unwrap().value() == value {
+											key.add(&item_before);
+											self.set_item_key(addr, next_addr, key);
+										} else {
+											let (_, _, old_value) = self.set_item(addr, next_addr, key, value);
+											self.insert_item(addr, item_before, old_value);
+										}
+									}
 								}
-							} else {
-								if same_as_next {
-									// nothing to do.
-								} else {
-									let item = self.btree.item_mut(addr).unwrap();
-									std::mem::swap(item.value_mut(), &mut value);
-									*item.key_mut() = key.clone().into();
-									self.btree.insert_at(addr, Item::new(left, value));
-								}
-							}
-
-							// Because we have `Some(left)`
-							// we know nothing on the left intersects the input range.
-							break // we are done
-						},
-						Difference::After(right, _) => {
-							let right = right.cloned();
-
-							if item.value() == &value {
-								let item = self.btree.item_mut(addr).unwrap();
-								item.key_mut().add(&key);
-							} else {
-								let item = self.btree.item_mut(addr).unwrap();
-								*item.key_mut() = right;
-								addr = self.btree.insert_at(addr, Item::new(key.clone().into(), value.clone()));
-							}
-						},
-						Difference::Empty => {
-							let same_as_next = next_addr.map(|next_addr| self.btree.item(next_addr).unwrap().value() == &value).unwrap_or(false);
 								
-							if same_as_next {
-								self.btree.remove_at(addr);
-							} else {
-								let item = self.btree.item_mut(addr).unwrap();
-								item.key_mut().add(&key);
-								item.set_value(value.clone());
+								break
+							},
+							Some(ProductArg::Subject(_)) | None => {
+								match self.btree.previous_item_address(addr) {
+									Some(prev_addr) if self.btree.item(prev_addr).unwrap().key().connected_to(&key) => {
+										// We can move one to the previous item.
+										let (prev_addr, addr) = if removed_item_value.is_none() {
+											self.remove_item(addr)
+										} else {
+											(prev_addr, Some(addr))
+										};
+
+										(prev_addr, addr)
+									},
+									_ => {
+										// There is no previous item, we must get it done now.
+										if removed_item_value.is_some() {
+											self.insert_item(addr, key, value);
+										} else {
+											self.set_item(addr, next_addr, key, value);
+										}
+
+										break
+									}
+								}
 							}
 						}
-					}
+					};
 
-					// go to the previous item is it also intersects the input range.
-					match self.btree.previous_item_address(addr) {
-						Some(prev_addr) if self.btree.item(prev_addr).unwrap().key().connected_to(&key) => {
-							next_addr = Some(addr);
-							addr = prev_addr
-						},
-						_ => break // otherwise we're done.
-					}
+					addr = prev_addr;
+					next_addr = prev_next_addr;
 				}
+
+				// // some work to do here...
+				// loop {
+				// 	let item = self.btree.item(addr).unwrap();
+				// 	match item.key().without(&key) {
+				// 		Difference::Split(left, right) => {
+				// 			let left = left.cloned();
+				// 			let right = right.cloned();
+
+				// 			if item.value() == &value {
+				// 				// nothing to do.
+				// 			} else {
+				// 				let right_value = {
+				// 					let item = self.btree.item_mut(addr).unwrap();
+				// 					*item.key_mut() = right;
+				// 					item.value().clone()
+				// 				};
+								
+				// 				addr = self.btree.insert_at(addr, Item::new(key.into(), value));
+				// 				self.btree.insert_at(addr, Item::new(left, right_value));
+				// 			}
+
+				// 			// Because we have `Some(left)`
+				// 			// we know nothing on the left intersects the input range.
+				// 			break // we are done
+				// 		},
+				// 		Difference::Before(left, _) => {
+				// 			let left = left.cloned();
+
+				// 			let same_as_prev = item.value() == &value;
+				// 			let same_as_next = next_addr.is_some();
+
+				// 			if same_as_prev {
+				// 				if same_as_next {
+				// 					let next_item = self.btree.item_mut(next_addr.unwrap()).unwrap();
+				// 					next_item.key_mut().add(&left);
+				// 					self.btree.remove_at(addr);
+				// 				} else {
+				// 					let item = self.btree.item_mut(addr).unwrap();
+				// 					item.key_mut().add(&key);
+				// 				}
+				// 			} else {
+				// 				if same_as_next {
+				// 					// nothing to do.
+				// 				} else {
+				// 					let item = self.btree.item_mut(addr).unwrap();
+				// 					std::mem::swap(item.value_mut(), &mut value);
+				// 					*item.key_mut() = key.clone().into();
+				// 					self.btree.insert_at(addr, Item::new(left, value));
+				// 				}
+				// 			}
+
+				// 			// Because we have `Some(left)`
+				// 			// we know nothing on the left intersects the input range.
+				// 			break // we are done
+				// 		},
+				// 		Difference::After(right, _) => {
+				// 			let right = right.cloned();
+
+				// 			if item.value() == &value {
+				// 				let item = self.btree.item_mut(addr).unwrap();
+				// 				item.key_mut().add(&key);
+				// 			} else {
+				// 				let item = self.btree.item_mut(addr).unwrap();
+				// 				*item.key_mut() = right;
+				// 				addr = self.btree.insert_at(addr, Item::new(key.clone().into(), value.clone()));
+				// 			}
+				// 		},
+				// 		Difference::Empty => {
+				// 			let same_as_next = next_addr.map(|next_addr| self.btree.item(next_addr).unwrap().value() == &value).unwrap_or(false);
+								
+				// 			if same_as_next {
+				// 				self.btree.remove_at(addr);
+				// 			} else {
+				// 				let item = self.btree.item_mut(addr).unwrap();
+				// 				item.key_mut().add(&key);
+				// 				item.set_value(value.clone());
+				// 			}
+				// 		}
+				// 	}
+
+				// 	// go to the previous item is it also intersects the input range.
+				// 	match self.btree.previous_item_address(addr) {
+				// 		Some(prev_addr) if self.btree.item(prev_addr).unwrap().key().connected_to(&key) => {
+				// 			next_addr = Some(addr);
+				// 			addr = prev_addr
+				// 		},
+				// 		_ => break // otherwise we're done.
+				// 	}
+				// }
 			},
 			Err(addr) => { // case (G)
 				self.btree.insert_at(addr, Item::new(key.into(), value));
@@ -697,6 +846,20 @@ mod tests {
 	}
 
 	#[test]
+	fn insert_around() {
+		let mut map: crate::RangeMap<char, usize> = crate::RangeMap::new();
+
+		map.insert(' ', 0);
+		map.insert('#', 1);
+		map.insert('e', 2);
+		map.insert('%', 3);
+		map.insert('A'..='Z', 4);
+		map.insert('a'..='z', 5);
+
+		assert!(map.get('a').is_some())
+	}
+
+	#[test]
 	fn update_connected_after() {
 		let mut map: crate::RangeMap<char, usize> = crate::RangeMap::new();
 
@@ -724,5 +887,15 @@ mod tests {
 		});
 
 		assert_eq!(*map.get('-').unwrap(), 3)
+	}
+
+	#[test]
+	fn update_around() {
+		let mut map: crate::RangeMap<char, usize> = crate::RangeMap::new();
+
+		map.insert('e', 0);
+		map.update('a'..='z', |_| Some(1));
+
+		assert!(map.get('a').is_some())
 	}
 }

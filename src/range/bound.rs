@@ -125,14 +125,14 @@ impl<T, U> PartialOrd<Directed<Bound<&U>>> for Directed<Bound<&T>> where T: Meas
 
 pub(crate) fn min_bound<'a, T: Measure + PartialOrd>(a: Bound<&'a T>, b: Bound<&'a T>, start: bool) -> Bound<&'a T> {
 	match direct_bound_partial_cmp(a, b, start) {
-		Some(BoundOrdering::Included(_)) => a,
-		_ => b
+		Some(BoundOrdering::Included(_)) => if start { b } else { a },
+		_ => if start { a } else { b }
 	}
 }
 
 pub(crate) fn max_bound<'a, T: Measure + PartialOrd>(a: Bound<&'a T>, b: Bound<&'a T>, start: bool) -> Bound<&'a T> {
 	match direct_bound_partial_cmp(a, b, start) {
-		Some(BoundOrdering::Included(_)) => b,
-		_ => a
+		Some(BoundOrdering::Included(_)) => if start { a } else { b },
+		_ => if start { b } else { a }
 	}
 }

@@ -150,6 +150,24 @@ fn insert_merge_ranges() {
 }
 
 #[test]
+fn insert_merge_ranges2() {
+	let mut range_map: RangeMap<i32, bool> = RangeMap::new();
+
+	range_map.insert(00..10, true);
+	range_map.insert(10..20, false);
+	range_map.insert(10..15, true);
+
+	assert_eq!(range_map.range_count(), 2);
+	assert_eq!(range_map.get(0), Some(&true));
+	assert_eq!(range_map.get(9), Some(&true));
+	assert_eq!(range_map.get(10), Some(&true));
+	assert_eq!(range_map.get(14), Some(&true));
+	assert_eq!(range_map.get(15), Some(&false));
+	assert_eq!(range_map.get(19), Some(&false));
+	assert_eq!(range_map.get(20), None);
+}
+
+#[test]
 fn update_merge_ranges() {
 	let mut range_map: RangeMap<i32, bool> = RangeMap::new();
 
@@ -159,6 +177,24 @@ fn update_merge_ranges() {
 	assert_eq!(range_map.range_count(), 1);
 	assert_eq!(range_map.get(0), Some(&true));
 	assert_eq!(range_map.get(19), Some(&true));
+	assert_eq!(range_map.get(20), None);
+}
+
+#[test]
+fn update_merge_ranges2() {
+	let mut range_map: RangeMap<i32, bool> = RangeMap::new();
+
+	range_map.insert( 0..10, true);
+	range_map.insert(10..20, false);
+	range_map.update(10..15, |_| Some(true));
+
+	assert_eq!(range_map.range_count(), 2);
+	assert_eq!(range_map.get(0), Some(&true));
+	assert_eq!(range_map.get(9), Some(&true));
+	assert_eq!(range_map.get(10), Some(&true));
+	assert_eq!(range_map.get(14), Some(&true));
+	assert_eq!(range_map.get(15), Some(&false));
+	assert_eq!(range_map.get(19), Some(&false));
 	assert_eq!(range_map.get(20), None);
 }
 
@@ -176,6 +212,24 @@ fn insert_merge_ranges_rev() {
 }
 
 #[test]
+fn insert_merge_ranges_rev2() {
+	let mut range_map: RangeMap<i32, bool> = RangeMap::new();
+
+	range_map.insert(0..10, true);
+	range_map.insert(10..20, false);
+	range_map.insert(5..10, false);
+
+	assert_eq!(range_map.range_count(), 2);
+	assert_eq!(range_map.get(0), Some(&true));
+	assert_eq!(range_map.get(4), Some(&true));
+	assert_eq!(range_map.get(5), Some(&false));
+	assert_eq!(range_map.get(9), Some(&false));
+	assert_eq!(range_map.get(10), Some(&false));
+	assert_eq!(range_map.get(19), Some(&false));
+	assert_eq!(range_map.get(20), None);
+}
+
+#[test]
 fn update_merge_ranges_rev() {
 	let mut range_map: RangeMap<i32, bool> = RangeMap::new();
 
@@ -185,5 +239,23 @@ fn update_merge_ranges_rev() {
 	assert_eq!(range_map.range_count(), 1);
 	assert_eq!(range_map.get(0), Some(&true));
 	assert_eq!(range_map.get(19), Some(&true));
+	assert_eq!(range_map.get(20), None);
+}
+
+#[test]
+fn update_merge_ranges_rev2() {
+	let mut range_map: RangeMap<i32, bool> = RangeMap::new();
+
+	range_map.insert( 0..10, true);
+	range_map.insert(10..20, false);
+	range_map.update(5..10, |_| Some(false));
+
+	assert_eq!(range_map.range_count(), 2);
+	assert_eq!(range_map.get(0), Some(&true));
+	assert_eq!(range_map.get(4), Some(&true));
+	assert_eq!(range_map.get(5), Some(&false));
+	assert_eq!(range_map.get(9), Some(&false));
+	assert_eq!(range_map.get(10), Some(&false));
+	assert_eq!(range_map.get(19), Some(&false));
 	assert_eq!(range_map.get(20), None);
 }

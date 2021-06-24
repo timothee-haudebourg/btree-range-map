@@ -21,6 +21,7 @@ use super::{
 	Directed,
 	Measure,
 	is_range_empty,
+	min_bound,
 	max_bound,
 	direct_bound_partial_eq,
 	direct_bound_partial_cmp,
@@ -39,6 +40,10 @@ impl<T> AnyRange<T> {
 			start: range.start().cloned(),
 			end: range.end().cloned()
 		}
+	}
+
+	pub fn into_bounds(self) -> (Bound<T>, Bound<T>) {
+		(self.start, self.end)
 	}
 
 	pub fn is_empty(&self) -> bool where T: PartialOrd + Measure {
@@ -90,7 +95,7 @@ impl<T> AnyRange<T> {
 	}
 
 	pub fn add<S>(&mut self, other: &S) where T: Clone + Measure + PartialOrd, S: RangeBounds<T> {
-		self.start = max_bound(self.start_bound(), other.start_bound(), true).cloned();
+		self.start = min_bound(self.start_bound(), other.start_bound(), true).cloned();
 		self.end = max_bound(self.end_bound(), other.end_bound(), false).cloned();
 	}
 
