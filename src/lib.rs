@@ -1,4 +1,3 @@
-#![feature(bound_cloned)]
 #![feature(trait_alias)]
 
 pub mod util;

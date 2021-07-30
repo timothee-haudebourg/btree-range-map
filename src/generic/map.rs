@@ -38,8 +38,7 @@ use crate::{
 	RangePartialOrd,
 	range::{
 		Difference,
-		ProductArg,
-		invert_bound
+		ProductArg
 	}
 };
 
