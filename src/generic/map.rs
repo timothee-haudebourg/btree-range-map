@@ -5,13 +5,14 @@ use crate::{
 };
 use btree_slab::generic::{
 	map::{BTreeExt, BTreeExtMut, BTreeMap},
-	node::{Address, Item, Node, Offset},
+	node::{Address, Item, Offset},
 };
 use cc_traits::{Slab, SlabMut};
 use std::{
 	cmp::{Ord, Ordering, PartialOrd},
 	hash::{Hash, Hasher},
 };
+use super::Node;
 
 #[derive(Clone)]
 pub struct RangeMap<K, V, C> {
