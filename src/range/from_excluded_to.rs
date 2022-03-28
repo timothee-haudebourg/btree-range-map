@@ -1,19 +1,14 @@
-use std::ops::{
-	Bound,
-	RangeBounds
-};
+use std::ops::{Bound, RangeBounds};
 
 // `a...b`
 pub struct RangeFromExcludedTo<T> {
 	pub start: T,
-	pub end: T
+	pub end: T,
 }
 
 impl<T> RangeFromExcludedTo<T> {
 	pub const fn new(start: T, end: T) -> RangeFromExcludedTo<T> {
-		RangeFromExcludedTo {
-			start, end
-		}
+		RangeFromExcludedTo { start, end }
 	}
 }
 

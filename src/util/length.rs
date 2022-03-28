@@ -1,6 +1,8 @@
 use super::Saturating;
 
-pub trait Len: Sized + Default + std::ops::Add<Output=Self> + std::ops::Sub<Output=Self> {
+pub trait Len:
+	Sized + Default + std::ops::Add<Output = Self> + std::ops::Sub<Output = Self>
+{
 	fn saturating_add(self, other: Self) -> Saturating<Self>;
 }
 

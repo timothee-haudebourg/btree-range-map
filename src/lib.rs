@@ -1,8 +1,8 @@
 #![feature(trait_alias)]
 
-pub mod util;
-mod range;
 pub mod generic;
+mod range;
+pub mod util;
 
 pub use range::*;
 

@@ -1,39 +1,27 @@
-use std::{
-	hash::{
-		Hash,
-		Hasher
-	},
-	cmp::{
-		Ordering
-	}
-};
-use cc_traits::{
-	Slab,
-	SlabMut
-};
-use btree_slab::generic::{
-	Node
-};
 use crate::{
-	util::{
-		Measure,
-		Saturating,
-		PartialEnum
-	},
-	AnyRange,
-	AsRange,
-	generic::RangeMap
+	generic::RangeMap,
+	util::{Measure, PartialEnum, Saturating},
+	AnyRange, AsRange,
+};
+use btree_slab::generic::Node;
+use cc_traits::{Slab, SlabMut};
+use std::{
+	cmp::Ordering,
+	hash::{Hash, Hasher},
 };
 
 #[derive(Clone)]
 pub struct RangeSet<T, C> {
-	map: RangeMap<T, (), C>
+	map: RangeMap<T, (), C>,
 }
 
 impl<T, C> RangeSet<T, C> {
-	pub fn new() -> RangeSet<T, C> where C: Default {
+	pub fn new() -> RangeSet<T, C>
+	where
+		C: Default,
+	{
 		RangeSet {
-			map: RangeMap::new()
+			map: RangeMap::new(),
 		}
 	}
 }
@@ -45,13 +33,16 @@ impl<T, C: Default> Default for RangeSet<T, C> {
 }
 
 impl<T, C: Slab<Node<AnyRange<T>, ()>>> RangeSet<T, C> {
-	pub fn len(&self) -> Saturating<T::Len> where T: Measure {
+	pub fn len(&self) -> Saturating<T::Len>
+	where
+		T: Measure,
+	{
 		self.map.len()
 	}
 
 	pub fn iter(&self) -> Iter<T, C> {
 		Iter {
-			inner: self.map.iter()
+			inner: self.map.iter(),
 		}
 	}
 }
@@ -66,22 +57,26 @@ impl<'a, T, C: Slab<Node<AnyRange<T>, ()>>> IntoIterator for &'a RangeSet<T, C> 
 }
 
 impl<T, C: SlabMut<Node<AnyRange<T>, ()>>> RangeSet<T, C> {
-	pub fn insert<R: AsRange<Item=T>>(&mut self, key: R) where T: Clone + PartialOrd + Measure {
+	pub fn insert<R: AsRange<Item = T>>(&mut self, key: R)
+	where
+		T: Clone + PartialOrd + Measure,
+	{
 		self.map.insert(key, ())
 	}
 
-	pub fn remove<R: AsRange<Item=T>>(&mut self, key: R) where T: Clone + PartialOrd + Measure {
+	pub fn remove<R: AsRange<Item = T>>(&mut self, key: R)
+	where
+		T: Clone + PartialOrd + Measure,
+	{
 		self.map.remove(key)
-	}
-
-	pub fn into_iter(self) -> IntoIter<T, C> {
-		IntoIter {
-			inner: self.map.into_iter()
-		}
 	}
 }
 
-impl<K, L, C: Slab<Node<AnyRange<K>, ()>>, D: Slab<Node<AnyRange<L>, ()>>> PartialEq<RangeSet<L, D>> for RangeSet<K, C> where L: Measure<K> + PartialOrd<K> {
+impl<K, L, C: Slab<Node<AnyRange<K>, ()>>, D: Slab<Node<AnyRange<L>, ()>>> PartialEq<RangeSet<L, D>>
+	for RangeSet<K, C>
+where
+	L: Measure<K> + PartialOrd<K>,
+{
 	fn eq(&self, other: &RangeSet<L, D>) -> bool {
 		self.map == other.map
 	}
@@ -89,19 +84,29 @@ impl<K, L, C: Slab<Node<AnyRange<K>, ()>>, D: Slab<Node<AnyRange<L>, ()>>> Parti
 
 impl<K, C: Slab<Node<AnyRange<K>, ()>>> Eq for RangeSet<K, C> where K: Measure + Ord {}
 
-impl<K, L, C: Slab<Node<AnyRange<K>, ()>>, D: Slab<Node<AnyRange<L>, ()>>> PartialOrd<RangeSet<L, D>> for RangeSet<K, C> where L: Measure<K> + PartialOrd<K> {
+impl<K, L, C: Slab<Node<AnyRange<K>, ()>>, D: Slab<Node<AnyRange<L>, ()>>>
+	PartialOrd<RangeSet<L, D>> for RangeSet<K, C>
+where
+	L: Measure<K> + PartialOrd<K>,
+{
 	fn partial_cmp(&self, other: &RangeSet<L, D>) -> Option<Ordering> {
 		self.map.partial_cmp(&other.map)
 	}
 }
 
-impl<K, C: Slab<Node<AnyRange<K>, ()>>> Ord for RangeSet<K, C> where K: Measure + Ord {
+impl<K, C: Slab<Node<AnyRange<K>, ()>>> Ord for RangeSet<K, C>
+where
+	K: Measure + Ord,
+{
 	fn cmp(&self, other: &Self) -> Ordering {
 		self.map.cmp(&other.map)
 	}
 }
 
-impl<K, C: Slab<Node<AnyRange<K>, ()>>> Hash for RangeSet<K, C> where K: Hash + PartialEnum {
+impl<K, C: Slab<Node<AnyRange<K>, ()>>> Hash for RangeSet<K, C>
+where
+	K: Hash + PartialEnum,
+{
 	fn hash<H: Hasher>(&self, h: &mut H) {
 		self.map.hash(h)
 	}
@@ -112,12 +117,14 @@ impl<T, C: SlabMut<Node<AnyRange<T>, ()>>> IntoIterator for RangeSet<T, C> {
 	type IntoIter = IntoIter<T, C>;
 
 	fn into_iter(self) -> Self::IntoIter {
-		self.into_iter()
+		IntoIter {
+			inner: self.map.into_iter(),
+		}
 	}
 }
 
 pub struct Iter<'a, T, C> {
-	inner: crate::generic::map::Iter<'a, T, (), C>
+	inner: crate::generic::map::Iter<'a, T, (), C>,
 }
 
 impl<'a, T, C: Slab<Node<AnyRange<T>, ()>>> Iterator for Iter<'a, T, C> {
@@ -126,22 +133,19 @@ impl<'a, T, C: Slab<Node<AnyRange<T>, ()>>> Iterator for Iter<'a, T, C> {
 	fn next(&mut self) -> Option<Self::Item> {
 		match self.inner.next() {
 			Some((range, ())) => Some(range),
-			None => None
+			None => None,
 		}
 	}
 }
 
 pub struct IntoIter<T, C> {
-	inner: crate::generic::map::IntoIter<T, (), C>
+	inner: crate::generic::map::IntoIter<T, (), C>,
 }
 
 impl<T, C: SlabMut<Node<AnyRange<T>, ()>>> Iterator for IntoIter<T, C> {
 	type Item = AnyRange<T>;
 
 	fn next(&mut self) -> Option<Self::Item> {
-		match self.inner.next() {
-			Some((range, ())) => Some(range),
-			None => None
-		}
+		self.inner.next().map(|(range, _)| range)
 	}
 }

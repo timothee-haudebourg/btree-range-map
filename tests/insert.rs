@@ -184,7 +184,7 @@ fn update_merge_ranges() {
 fn update_merge_ranges2() {
 	let mut range_map: RangeMap<i32, bool> = RangeMap::new();
 
-	range_map.insert( 0..10, true);
+	range_map.insert(0..10, true);
 	range_map.insert(10..20, false);
 	range_map.update(10..15, |_| Some(true));
 
@@ -246,7 +246,7 @@ fn update_merge_ranges_rev() {
 fn update_merge_ranges_rev2() {
 	let mut range_map: RangeMap<i32, bool> = RangeMap::new();
 
-	range_map.insert( 0..10, true);
+	range_map.insert(0..10, true);
 	range_map.insert(10..20, false);
 	range_map.update(5..10, |_| Some(false));
 

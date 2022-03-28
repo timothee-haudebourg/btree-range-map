@@ -1,10 +1,7 @@
-use super::{
-	Len,
-	PartialEnum,
-	Saturating
-};
+use super::{Len, PartialEnum, Saturating};
 
-// /// Distance between singletons.
+/// Distance between singletons.
+#[allow(clippy::len_without_is_empty)]
 pub trait Measure<U = Self>: PartialEnum {
 	type Len: Len;
 
@@ -36,7 +33,7 @@ impl Measure for char {
 				} else {
 					Saturating::Sub(u32::MAX - *self as u32 + 1)
 				}
-			},
+			}
 			Saturating::Sub(other) => {
 				let a = *self as u32;
 				let b = *other as u32;
@@ -89,11 +86,11 @@ macro_rules! impl_measure {
 						} else {
 							Saturating::Sub((Self::MAX as $cast - *self as $cast) as $len + 1)
 						}
-					},
+					}
 					Saturating::Sub(other) => {
 						let a = *self as $cast;
 						let b = *other as $cast;
-		
+
 						if a > b {
 							Saturating::Sub((a - b) as $len)
 						} else {
@@ -103,7 +100,7 @@ macro_rules! impl_measure {
 				}
 			}
 		}
-	}
+	};
 }
 
 impl_measure!(@refl u8, u8, u8);
@@ -191,7 +188,7 @@ macro_rules! impl_f_measure {
 						Saturating::Sub(other) => {
 							let a = *self as $cast;
 							let b = *other as $cast;
-			
+
 							if a > b {
 								Saturating::Sub((a - b) as $len)
 							} else {
@@ -202,7 +199,7 @@ macro_rules! impl_f_measure {
 				}
 			}
 		}
-	}
+	};
 }
 
 impl_f_measure!(@refl f32, f32);
