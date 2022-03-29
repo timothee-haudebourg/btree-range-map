@@ -1,5 +1,5 @@
 pub trait PartialEnum: Sized {
-	const INFINITE_MIN: Self;
+	// const INFINITE_MIN: Self;
 
 	const MIN: Self;
 	const MAX: Self;
@@ -10,7 +10,8 @@ pub trait PartialEnum: Sized {
 }
 
 impl PartialEnum for char {
-	const INFINITE_MIN: char = '\u{000000}';
+	// const INFINITE_MIN: char = '\u{000000}';
+
 	const MIN: char = '\u{000000}';
 	const MAX: char = '\u{10ffff}';
 

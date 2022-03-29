@@ -2,7 +2,7 @@ use super::{
 	direct_bound_cmp, direct_bound_partial_cmp, direct_bound_partial_eq, is_range_empty, max_bound,
 	min_bound, AsRange, Bound, BoundOrdering, Directed, Measure,
 };
-use crate::util::{PartialEnum, Saturating};
+use crate::util::PartialEnum;
 use std::{
 	cmp::{Ord, Ordering, PartialOrd},
 	hash::{Hash, Hasher},
@@ -37,22 +37,20 @@ impl<T> AnyRange<T> {
 		is_range_empty(self.start_bound(), self.end_bound())
 	}
 
-	pub fn len(&self) -> Saturating<T::Len>
+	pub fn len(&self) -> T::Len
 	where
 		T: Measure,
 	{
 		match (self.start_bound(), self.end_bound()) {
-			(Bound::Included(a), Bound::Included(b)) => a.distance(Saturating::Sub(b)) + b.len(),
-			(Bound::Included(a), Bound::Excluded(b)) => a.distance(Saturating::Sub(b)),
-			(Bound::Included(a), Bound::Unbounded) => a.distance(Saturating::Saturated),
-			(Bound::Excluded(a), Bound::Included(b)) => {
-				a.distance(Saturating::Sub(b)) - a.len() + b.len()
-			}
-			(Bound::Excluded(a), Bound::Excluded(b)) => a.distance(Saturating::Sub(b)) - a.len(),
-			(Bound::Excluded(a), Bound::Unbounded) => a.distance(Saturating::Saturated) - a.len(),
-			(Bound::Unbounded, Bound::Included(b)) => T::MIN.distance(Saturating::Sub(b)) + b.len(),
-			(Bound::Unbounded, Bound::Excluded(b)) => T::MIN.distance(Saturating::Sub(b)),
-			(Bound::Unbounded, Bound::Unbounded) => T::MIN.distance(Saturating::Saturated),
+			(Bound::Included(a), Bound::Included(b)) => a.distance(b) + b.len(),
+			(Bound::Included(a), Bound::Excluded(b)) => a.distance(b),
+			(Bound::Included(a), Bound::Unbounded) => a.distance(&T::MAX),
+			(Bound::Excluded(a), Bound::Included(b)) => a.distance(b) - a.len() + b.len(),
+			(Bound::Excluded(a), Bound::Excluded(b)) => a.distance(b) - a.len(),
+			(Bound::Excluded(a), Bound::Unbounded) => a.distance(&T::MAX) - a.len(),
+			(Bound::Unbounded, Bound::Included(b)) => T::MIN.distance(b) + b.len(),
+			(Bound::Unbounded, Bound::Excluded(b)) => T::MIN.distance(b),
+			(Bound::Unbounded, Bound::Unbounded) => T::MIN.distance(&T::MAX),
 		}
 	}
 

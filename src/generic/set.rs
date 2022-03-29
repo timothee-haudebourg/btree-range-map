@@ -1,6 +1,6 @@
 use crate::{
 	generic::RangeMap,
-	util::{Measure, PartialEnum, Saturating},
+	util::{Measure, PartialEnum},
 	AnyRange, AsRange,
 };
 use btree_slab::generic::Node;
@@ -39,7 +39,7 @@ impl<T, C: Slab<Node<AnyRange<T>, ()>>> RangeSet<T, C>
 where
 	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<T>, ()>>,
 {
-	pub fn len(&self) -> Saturating<T::Len>
+	pub fn len(&self) -> T::Len
 	where
 		T: Measure,
 	{

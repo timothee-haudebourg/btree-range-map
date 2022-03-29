@@ -1,7 +1,7 @@
 use super::Node;
 use crate::{
 	range::{Difference, ProductArg},
-	util::{Measure, PartialEnum, Saturating},
+	util::{Measure, PartialEnum},
 	AnyRange, AsRange, RangeOrdering, RangePartialOrd,
 };
 use btree_slab::generic::{
@@ -42,11 +42,11 @@ impl<K, V, C: Slab<Node<AnyRange<K>, V>>> RangeMap<K, V, C>
 where
 	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, V>>,
 {
-	pub fn len(&self) -> Saturating<K::Len>
+	pub fn len(&self) -> K::Len
 	where
 		K: Measure,
 	{
-		let mut len = Saturating::<K::Len>::default();
+		let mut len = K::Len::default();
 		for (range, _) in self {
 			len = len + range.len()
 		}
