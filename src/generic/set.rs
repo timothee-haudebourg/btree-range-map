@@ -51,6 +51,11 @@ where
 			inner: self.map.iter(),
 		}
 	}
+
+	/// Returns an iterator over the gaps (missing values) of the set.
+	pub fn gaps(&self) -> Gaps<T, C> {
+		self.map.gaps()
+	}
 }
 
 impl<'a, T, C: Slab<Node<AnyRange<T>, ()>>> IntoIterator for &'a RangeSet<T, C>
@@ -184,3 +189,6 @@ where
 		self.inner.next().map(|(range, _)| range)
 	}
 }
+
+/// Iterator over the gaps (unbound keys) of a `RangeSet`.
+pub type Gaps<'a, T, C> = crate::generic::map::Gaps<'a, T, (), C>;

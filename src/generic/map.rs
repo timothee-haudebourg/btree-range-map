@@ -147,6 +147,15 @@ where
 	pub fn iter(&self) -> Iter<K, V, C> {
 		self.btree.iter()
 	}
+
+	/// Returns an iterator over the gaps (unbounded keys) of the map.
+	pub fn gaps(&self) -> Gaps<K, V, C> {
+		Gaps {
+			inner: self.btree.iter(),
+			prev: None,
+			done: false,
+		}
+	}
 }
 
 impl<K, L, V, W, C: Slab<Node<AnyRange<K>, V>>, D: Slab<Node<AnyRange<L>, W>>>
@@ -767,6 +776,87 @@ where
 	}
 }
 
+pub type Iter<'a, K, V, C> = btree_slab::generic::map::Iter<'a, AnyRange<K>, V, C>;
+pub type IntoIter<K, V, C> = btree_slab::generic::map::IntoIter<AnyRange<K>, V, C>;
+
+/// Iterator over the gaps (unbound keys) of a `RangeMap`.
+pub struct Gaps<'a, K, V, C> {
+	inner: Iter<'a, K, V, C>,
+	prev: Option<std::ops::Bound<&'a K>>,
+	done: bool,
+}
+
+impl<'a, K: Measure + PartialOrd, V, C: Slab<Node<AnyRange<K>, V>>> Iterator for Gaps<'a, K, V, C>
+where
+	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, V>>,
+{
+	type Item = AnyRange<&'a K>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		use std::ops::{Bound, RangeBounds};
+
+		if self.done {
+			None
+		} else {
+			loop {
+				match self.inner.next() {
+					Some((range, _)) => {
+						let end = match range.start_bound() {
+							Bound::Unbounded => continue,
+							Bound::Included(t) => Bound::Excluded(t),
+							Bound::Excluded(t) => Bound::Included(t),
+						};
+
+						let start = match self.prev.take() {
+							Some(bound) => bound,
+							None => Bound::Unbounded,
+						};
+
+						self.prev = match range.end_bound() {
+							Bound::Unbounded => {
+								self.done = true;
+								None
+							}
+							Bound::Included(t) => Some(Bound::Excluded(t)),
+							Bound::Excluded(t) => Some(Bound::Included(t)),
+						};
+
+						let range = AnyRange { start, end };
+
+						if !range.ref_is_empty() {
+							break Some(range);
+						}
+					}
+					None => {
+						self.done = true;
+						let start = self.prev.take();
+						match start {
+							Some(bound) => {
+								let range = AnyRange {
+									start: bound,
+									end: Bound::Unbounded,
+								};
+
+								break if range.ref_is_empty() {
+									None
+								} else {
+									Some(range)
+								};
+							}
+							None => {
+								break Some(AnyRange {
+									start: Bound::Unbounded,
+									end: Bound::Unbounded,
+								})
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 /// Search for the index of the gratest item less/below or equal/including the given element.
 ///
 /// If `connected` is `true`, then it will search for the gratest item less/below or equal/including **or connected to** the given element.
@@ -819,9 +909,6 @@ where
 		Some(i)
 	}
 }
-
-pub type Iter<'a, K, V, C> = btree_slab::generic::map::Iter<'a, AnyRange<K>, V, C>;
-pub type IntoIter<K, V, C> = btree_slab::generic::map::IntoIter<AnyRange<K>, V, C>;
 
 #[cfg(test)]
 mod tests {

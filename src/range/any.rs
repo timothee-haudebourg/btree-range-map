@@ -144,6 +144,15 @@ impl<T> AnyRange<T> {
 	}
 }
 
+impl<'a, T> AnyRange<&'a T> {
+	pub fn ref_is_empty(&self) -> bool
+	where
+		T: PartialOrd + Measure,
+	{
+		is_range_empty(self.start_bound().cloned(), self.end_bound().cloned())
+	}
+}
+
 impl<T, U> PartialEq<AnyRange<U>> for AnyRange<T>
 where
 	T: Measure<U> + PartialOrd<U>,
