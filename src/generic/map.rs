@@ -1,3 +1,4 @@
+use super::Node;
 use crate::{
 	range::{Difference, ProductArg},
 	util::{Measure, PartialEnum, Saturating},
@@ -12,8 +13,8 @@ use std::{
 	cmp::{Ord, Ordering, PartialOrd},
 	hash::{Hash, Hasher},
 };
-use super::Node;
 
+/// Range map.
 #[derive(Clone)]
 pub struct RangeMap<K, V, C> {
 	btree: BTreeMap<AnyRange<K>, V, C>,
@@ -37,7 +38,10 @@ impl<K, T, C: Default> Default for RangeMap<K, T, C> {
 	}
 }
 
-impl<K, V, C: Slab<Node<AnyRange<K>, V>>> RangeMap<K, V, C> {
+impl<K, V, C: Slab<Node<AnyRange<K>, V>>> RangeMap<K, V, C>
+where
+	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, V>>,
+{
 	pub fn len(&self) -> Saturating<K::Len>
 	where
 		K: Measure,
@@ -150,6 +154,8 @@ impl<K, L, V, W, C: Slab<Node<AnyRange<K>, V>>, D: Slab<Node<AnyRange<L>, W>>>
 where
 	L: Measure<K> + PartialOrd<K>,
 	W: PartialEq<V>,
+	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, V>>,
+	for<'r> D::ItemRef<'r>: Into<&'r Node<AnyRange<L>, W>>,
 {
 	fn eq(&self, other: &RangeMap<L, W, D>) -> bool {
 		self.btree == other.btree
@@ -160,6 +166,7 @@ impl<K, V, C: Slab<Node<AnyRange<K>, V>>> Eq for RangeMap<K, V, C>
 where
 	K: Measure + Ord,
 	V: Eq,
+	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, V>>,
 {
 }
 
@@ -168,6 +175,8 @@ impl<K, L, V, W, C: Slab<Node<AnyRange<K>, V>>, D: Slab<Node<AnyRange<L>, W>>>
 where
 	L: Measure<K> + PartialOrd<K>,
 	W: PartialOrd<V>,
+	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, V>>,
+	for<'r> D::ItemRef<'r>: Into<&'r Node<AnyRange<L>, W>>,
 {
 	fn partial_cmp(&self, other: &RangeMap<L, W, D>) -> Option<Ordering> {
 		self.btree.partial_cmp(&other.btree)
@@ -178,6 +187,7 @@ impl<K, V, C: Slab<Node<AnyRange<K>, V>>> Ord for RangeMap<K, V, C>
 where
 	K: Measure + Ord,
 	V: Ord,
+	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, V>>,
 {
 	fn cmp(&self, other: &Self) -> Ordering {
 		self.btree.cmp(&other.btree)
@@ -188,6 +198,7 @@ impl<K, V, C: Slab<Node<AnyRange<K>, V>>> Hash for RangeMap<K, V, C>
 where
 	K: Hash + PartialEnum,
 	V: Hash,
+	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, V>>,
 {
 	fn hash<H: Hasher>(&self, h: &mut H) {
 		for range in self {
@@ -196,7 +207,10 @@ where
 	}
 }
 
-impl<'a, K, V, C: Slab<Node<AnyRange<K>, V>>> IntoIterator for &'a RangeMap<K, V, C> {
+impl<'a, K, V, C: Slab<Node<AnyRange<K>, V>>> IntoIterator for &'a RangeMap<K, V, C>
+where
+	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, V>>,
+{
 	type Item = (&'a AnyRange<K>, &'a V);
 	type IntoIter = Iter<'a, K, V, C>;
 
@@ -205,7 +219,11 @@ impl<'a, K, V, C: Slab<Node<AnyRange<K>, V>>> IntoIterator for &'a RangeMap<K, V
 	}
 }
 
-impl<K, V, C: SlabMut<Node<AnyRange<K>, V>>> RangeMap<K, V, C> {
+impl<K, V, C: SlabMut<Node<AnyRange<K>, V>>> RangeMap<K, V, C>
+where
+	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, V>>,
+	for<'r> C::ItemMut<'r>: Into<&'r mut Node<AnyRange<K>, V>>,
+{
 	fn merge_forward(&mut self, addr: Address, next_addr: Option<Address>)
 	where
 		K: Clone + PartialOrd + Measure,
@@ -736,7 +754,11 @@ impl<K, V, C: SlabMut<Node<AnyRange<K>, V>>> RangeMap<K, V, C> {
 	}
 }
 
-impl<K, V, C: SlabMut<Node<AnyRange<K>, V>>> IntoIterator for RangeMap<K, V, C> {
+impl<K, V, C: SlabMut<Node<AnyRange<K>, V>>> IntoIterator for RangeMap<K, V, C>
+where
+	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, V>>,
+	for<'r> C::ItemMut<'r>: Into<&'r mut Node<AnyRange<K>, V>>,
+{
 	type Item = (AnyRange<K>, V);
 	type IntoIter = IntoIter<K, V, C>;
 

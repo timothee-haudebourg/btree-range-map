@@ -1,12 +1,18 @@
 [package]
 name = "btree-range-map"
 version = "0.1.0"
-authors = ["Timothée Haudebourg <timothee.haudebourg@irisa.fr>"]
+authors = ["Timothée Haudebourg <author@haudebourg.net>"]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+categories = ["data-structures"]
+keywords = ["btree", "range", "map", "set"]
+description = "B-tree range map implementation"
+repository = "https://github.com/timothee-haudebourg/btree-range-map"
+documentation = "https://docs.rs/btree-range-map"
+license = "MIT/Apache-2.0"
+readme = "README.md"
 
 [dependencies]
-cc-traits = { version = "0.4.0", features = ["nightly"] }
-btree-slab = { path = "../btree-slab" }
-slab = "*"
+cc-traits = "0.8.0"
+btree-slab = "0.4.0"
+slab = "0.4.5"

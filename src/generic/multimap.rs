@@ -9,6 +9,12 @@ use crate::{
 use btree_slab::generic::Node;
 use cc_traits::{SetMut, Slab, SlabMut};
 
+/// Multi map.
+///
+/// In a multi map, each key is associated to a set of values.
+/// The type parameter `S` is the set type. It can be replaced by anything
+/// implementing the [`cc_traits::SetMut`] trait, such as the standard
+/// [`BTreeSet`](std::collections::BTreeSet) and [`HashSet`](std::collections::HashSet).
 #[derive(Clone)]
 pub struct RangeMultiMap<K, S, C> {
 	map: RangeMap<K, S, C>,
@@ -31,7 +37,10 @@ impl<K, S, C: Default> Default for RangeMultiMap<K, S, C> {
 	}
 }
 
-impl<K, S, C: Slab<Node<AnyRange<K>, S>>> RangeMultiMap<K, S, C> {
+impl<K, S, C: Slab<Node<AnyRange<K>, S>>> RangeMultiMap<K, S, C>
+where
+	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, S>>,
+{
 	pub fn iter(&self) -> Iter<K, S, C> {
 		self.map.iter()
 	}
@@ -39,6 +48,8 @@ impl<K, S, C: Slab<Node<AnyRange<K>, S>>> RangeMultiMap<K, S, C> {
 
 impl<'a, K: Clone + PartialOrd + Measure, S, C: Slab<Node<AnyRange<K>, S>>> IntoIterator
 	for &'a RangeMultiMap<K, S, C>
+where
+	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, S>>,
 {
 	type Item = (&'a AnyRange<K>, &'a S);
 	type IntoIter = Iter<'a, K, S, C>;
@@ -48,7 +59,11 @@ impl<'a, K: Clone + PartialOrd + Measure, S, C: Slab<Node<AnyRange<K>, S>>> Into
 	}
 }
 
-impl<K, S, C: SlabMut<Node<AnyRange<K>, S>>> RangeMultiMap<K, S, C> {
+impl<K, S, C: SlabMut<Node<AnyRange<K>, S>>> RangeMultiMap<K, S, C>
+where
+	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, S>>,
+	for<'r> C::ItemMut<'r>: Into<&'r mut Node<AnyRange<K>, S>>,
+{
 	pub fn insert<R: AsRange<Item = K>, V>(&mut self, key: R, value: V)
 	where
 		K: Clone + PartialOrd + Measure,
@@ -89,6 +104,9 @@ impl<K, S, C: SlabMut<Node<AnyRange<K>, S>>> RangeMultiMap<K, S, C> {
 
 impl<K: Clone + PartialOrd + Measure, S, C: SlabMut<Node<AnyRange<K>, S>>> IntoIterator
 	for RangeMultiMap<K, S, C>
+where
+	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, S>>,
+	for<'r> C::ItemMut<'r>: Into<&'r mut Node<AnyRange<K>, S>>,
 {
 	type Item = (AnyRange<K>, S);
 	type IntoIter = IntoIter<K, S, C>;

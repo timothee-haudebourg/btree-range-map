@@ -1,6 +1,6 @@
 use std::ops::{Bound, RangeBounds};
 
-// `a...b`
+/// Range where both bounds are excluded.
 pub struct RangeFromExcludedTo<T> {
 	pub start: T,
 	pub end: T,

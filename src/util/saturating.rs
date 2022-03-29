@@ -1,5 +1,9 @@
 use super::Len;
 
+/// Saturating value.
+///
+/// This used to talk about the size of a range map or set.
+/// If `Saturated` then no more key/item can be inserted.
 #[derive(Clone, Copy)]
 pub enum Saturating<T> {
 	Saturated,

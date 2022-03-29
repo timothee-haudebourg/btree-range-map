@@ -1,5 +1,6 @@
 use std::ops::{Bound, RangeBounds};
 
+/// Range with only an start bound, excluded.
 pub struct RangeFromExcluded<T> {
 	pub start: T,
 }
