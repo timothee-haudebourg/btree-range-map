@@ -12,6 +12,7 @@ use cc_traits::{Slab, SlabMut};
 use std::{
 	cmp::{Ord, Ordering, PartialOrd},
 	hash::{Hash, Hasher},
+	fmt
 };
 
 /// Range map.
@@ -165,10 +166,26 @@ where
 	}
 }
 
+impl<K: fmt::Debug, V: fmt::Debug, C: Slab<Node<AnyRange<K>, V>>> fmt::Debug for RangeMap<K, V, C>
+where
+	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, V>>,
+{
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(f, "{{")?;
+
+		for (range, value) in self {
+			write!(f, "{:?}=>{:?}", range, value)?
+		}
+
+		write!(f, "}}")
+	}
+}
+
 impl<K, L, V, W, C: Slab<Node<AnyRange<K>, V>>, D: Slab<Node<AnyRange<L>, W>>>
 	PartialEq<RangeMap<L, W, D>> for RangeMap<K, V, C>
 where
 	L: Measure<K> + PartialOrd<K>,
+	K: PartialEnum,
 	W: PartialEq<V>,
 	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, V>>,
 	for<'r> D::ItemRef<'r>: Into<&'r Node<AnyRange<L>, W>>,
@@ -190,6 +207,7 @@ impl<K, L, V, W, C: Slab<Node<AnyRange<K>, V>>, D: Slab<Node<AnyRange<L>, W>>>
 	PartialOrd<RangeMap<L, W, D>> for RangeMap<K, V, C>
 where
 	L: Measure<K> + PartialOrd<K>,
+	K: PartialEnum,
 	W: PartialOrd<V>,
 	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, V>>,
 	for<'r> D::ItemRef<'r>: Into<&'r Node<AnyRange<L>, W>>,
@@ -808,12 +826,6 @@ where
 			loop {
 				match self.inner.next() {
 					Some((range, _)) => {
-						let end = match range.start_bound() {
-							Bound::Unbounded => continue,
-							Bound::Included(t) => Bound::Excluded(t),
-							Bound::Excluded(t) => Bound::Included(t),
-						};
-
 						let start = match self.prev.take() {
 							Some(bound) => bound,
 							None => Bound::Unbounded,
@@ -828,10 +840,16 @@ where
 							Bound::Excluded(t) => Some(Bound::Included(t)),
 						};
 
-						let range = AnyRange { start, end };
+						let end = match range.start_bound() {
+							Bound::Unbounded => continue,
+							Bound::Included(t) => Bound::Excluded(t),
+							Bound::Excluded(t) => Bound::Included(t),
+						};
 
-						if !range.ref_is_empty() {
-							break Some(range);
+						let gap = AnyRange { start, end };
+
+						if !gap.ref_is_empty() {
+							break Some(gap);
 						}
 					}
 					None => {
@@ -839,15 +857,15 @@ where
 						let start = self.prev.take();
 						match start {
 							Some(bound) => {
-								let range = AnyRange {
+								let gap = AnyRange {
 									start: bound,
 									end: Bound::Unbounded,
 								};
 
-								break if range.ref_is_empty() {
+								break if gap.ref_is_empty() {
 									None
 								} else {
-									Some(range)
+									Some(gap)
 								};
 							}
 							None => {

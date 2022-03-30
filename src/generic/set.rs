@@ -8,6 +8,7 @@ use cc_traits::{Slab, SlabMut};
 use std::{
 	cmp::Ordering,
 	hash::{Hash, Hasher},
+	fmt
 };
 
 /// Range set.
@@ -69,6 +70,21 @@ where
 	}
 }
 
+impl<T: fmt::Debug, C: Slab<Node<AnyRange<T>, ()>>> fmt::Debug for RangeSet<T, C>
+where
+	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<T>, ()>>,
+{
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(f, "{{")?;
+
+		for range in self {
+			write!(f, "{:?}", range)?
+		}
+
+		write!(f, "}}")
+	}
+}
+
 impl<'a, T, C: Slab<Node<AnyRange<T>, ()>>> IntoIterator for &'a RangeSet<T, C>
 where
 	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<T>, ()>>,
@@ -113,6 +129,7 @@ impl<K, L, C: Slab<Node<AnyRange<K>, ()>>, D: Slab<Node<AnyRange<L>, ()>>> Parti
 	for RangeSet<K, C>
 where
 	L: Measure<K> + PartialOrd<K>,
+	K: PartialEnum,
 	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, ()>>,
 	for<'r> D::ItemRef<'r>: Into<&'r Node<AnyRange<L>, ()>>,
 {
@@ -132,6 +149,7 @@ impl<K, L, C: Slab<Node<AnyRange<K>, ()>>, D: Slab<Node<AnyRange<L>, ()>>>
 	PartialOrd<RangeSet<L, D>> for RangeSet<K, C>
 where
 	L: Measure<K> + PartialOrd<K>,
+	K: PartialEnum,
 	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, ()>>,
 	for<'r> D::ItemRef<'r>: Into<&'r Node<AnyRange<L>, ()>>,
 {
@@ -237,5 +255,81 @@ where
 		let mut result = Self::default();
 		result.extend(iter);
 		result
+	}
+}
+
+#[cfg(test)]
+mod test {
+	use crate::{
+		RangeSet,
+		AnyRange
+	};
+
+	#[test]
+	fn gaps1() {
+		let mut a: RangeSet<u8> = RangeSet::new();
+		let mut b: RangeSet<u8> = RangeSet::new();
+
+		a.insert(10..20);
+
+		b.insert(0..10);
+		b.insert(20..);
+
+		assert_eq!(a.complement(), b)
+	}
+
+	#[test]
+	fn gaps2() {
+		let mut a: RangeSet<u8> = RangeSet::new();
+		let mut b: RangeSet<u8> = RangeSet::new();
+
+		a.insert(0..10);
+		b.insert(10..);
+
+		assert_eq!(a.complement(), b)
+	}
+
+	#[test]
+	fn gaps3() {
+		let mut a: RangeSet<u8> = RangeSet::new();
+		let mut b: RangeSet<u8> = RangeSet::new();
+
+		a.insert(20..);
+		b.insert(0..=19);
+
+		assert_eq!(a.complement(), b)
+	}
+
+	#[test]
+	fn gaps4() {
+		let mut a: RangeSet<u8> = RangeSet::new();
+
+		a.insert(10..20);
+
+		let mut gaps = a.gaps().map(AnyRange::cloned);
+		assert_eq!(gaps.next(), Some(AnyRange::from(..10u8)));
+		assert_eq!(gaps.next(), Some(AnyRange::from(20u8..)));
+		assert_eq!(gaps.next(), None)
+	}
+
+	#[test]
+	fn gaps5() {
+		let mut a: RangeSet<u8> = RangeSet::new();
+
+		a.insert(..10);
+		a.insert(20..);
+
+		let mut gaps = a.gaps().map(AnyRange::cloned);
+		assert_eq!(gaps.next(), Some(AnyRange::from(10..20)));
+		assert_eq!(gaps.next(), None)
+	}
+
+	#[test]
+	fn gaps6() {
+		let mut a: RangeSet<u8> = RangeSet::new();
+
+		a.insert(10..20);
+
+		assert_eq!(a.complement().complement(), a)
 	}
 }

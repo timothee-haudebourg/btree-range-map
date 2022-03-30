@@ -1,4 +1,4 @@
-use crate::util::Measure;
+use crate::util::{Measure, PartialEnum};
 use std::{
 	cmp::PartialOrd,
 	ops::{Bound, RangeBounds},
@@ -309,6 +309,7 @@ standard_range!(RangeFromExcludedToIncluded<T>);
 fn is_range_empty<T, U>(start: Bound<&T>, end: Bound<&U>) -> bool
 where
 	T: PartialOrd<U> + Measure<U>,
+	U: PartialEnum,
 {
 	Directed::Start(start) > Directed::End(end)
 }

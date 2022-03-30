@@ -87,6 +87,7 @@ impl<'a, T: Hash + PartialEnum> Hash for Directed<Bound<&'a T>> {
 impl<T, U> PartialEq<Directed<Bound<&U>>> for Directed<Bound<&T>>
 where
 	T: Measure<U> + PartialOrd<U>,
+	U: PartialEnum
 {
 	fn eq(&self, other: &Directed<Bound<&U>>) -> bool {
 		self.partial_cmp(other) == Some(Ordering::Equal)
@@ -96,6 +97,7 @@ where
 impl<T, U> PartialOrd<Directed<Bound<&U>>> for Directed<Bound<&T>>
 where
 	T: Measure<U> + PartialOrd<U>,
+	U: PartialEnum
 {
 	fn partial_cmp(&self, other: &Directed<Bound<&U>>) -> Option<Ordering> {
 		match self.bound_partial_cmp(other) {

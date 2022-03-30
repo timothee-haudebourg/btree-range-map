@@ -7,9 +7,10 @@ use std::{
 	cmp::{Ord, Ordering, PartialOrd},
 	hash::{Hash, Hasher},
 	ops::RangeBounds,
+	fmt
 };
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct AnyRange<T> {
 	pub start: Bound<T>,
 	pub end: Bound<T>,
@@ -144,6 +145,22 @@ impl<T> AnyRange<T> {
 	}
 }
 
+impl<T: fmt::Debug> fmt::Debug for AnyRange<T> {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		match &self.start {
+			Bound::Included(v) => v.fmt(f)?,
+			Bound::Excluded(v) => write!(f, "{:?}.", v)?,
+			Bound::Unbounded => write!(f, ".")?
+		}
+
+		match &self.end {
+			Bound::Included(v) => write!(f, "..={:?}", v),
+			Bound::Excluded(v) => write!(f, "..{:?}", v),
+			Bound::Unbounded => write!(f, "..")
+		}
+	}
+}
+
 impl<'a, T> AnyRange<&'a T> {
 	pub fn ref_is_empty(&self) -> bool
 	where
@@ -156,6 +173,7 @@ impl<'a, T> AnyRange<&'a T> {
 impl<T, U> PartialEq<AnyRange<U>> for AnyRange<T>
 where
 	T: Measure<U> + PartialOrd<U>,
+	U: PartialEnum
 {
 	fn eq(&self, other: &AnyRange<U>) -> bool {
 		direct_bound_partial_eq(self.start_bound(), other.start_bound(), true)
@@ -168,6 +186,7 @@ impl<T> Eq for AnyRange<T> where T: Measure + Ord {}
 impl<T, U> PartialOrd<AnyRange<U>> for AnyRange<T>
 where
 	T: Measure<U> + PartialOrd<U>,
+	U: PartialEnum
 {
 	fn partial_cmp(&self, other: &AnyRange<U>) -> Option<Ordering> {
 		// Directed::Start(self.start_bound()).partial_cmp(Directed::Start(other.start_bound()))
