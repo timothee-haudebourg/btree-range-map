@@ -96,7 +96,7 @@ where
 		self.map.remove(key)
 	}
 
-	pub fn inverse(&self) -> Self
+	pub fn complement(&self) -> Self
 	where
 		T: Clone + Measure + PartialOrd,
 		C: Default,
