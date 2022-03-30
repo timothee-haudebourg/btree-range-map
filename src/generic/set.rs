@@ -46,6 +46,13 @@ where
 		self.map.len()
 	}
 
+	pub fn is_empty(&self) -> bool
+	where
+		T: Measure,
+	{
+		self.len() == T::Len::default()
+	}
+
 	pub fn iter(&self) -> Iter<T, C> {
 		Iter {
 			inner: self.map.iter(),
@@ -87,6 +94,14 @@ where
 		T: Clone + PartialOrd + Measure,
 	{
 		self.map.remove(key)
+	}
+
+	pub fn inverse(&self) -> Self
+	where
+		T: Clone + Measure + PartialOrd,
+		C: Default,
+	{
+		self.gaps().map(AnyRange::cloned).collect()
 	}
 }
 
@@ -192,3 +207,31 @@ where
 
 /// Iterator over the gaps (unbound keys) of a `RangeSet`.
 pub type Gaps<'a, T, C> = crate::generic::map::Gaps<'a, T, (), C>;
+
+impl<R: AsRange, C: SlabMut<Node<AnyRange<R::Item>, ()>>> std::iter::Extend<R>
+	for RangeSet<R::Item, C>
+where
+	R::Item: Clone + Measure + PartialOrd,
+	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<R::Item>, ()>>,
+	for<'r> C::ItemMut<'r>: Into<&'r mut Node<AnyRange<R::Item>, ()>>,
+{
+	fn extend<I: IntoIterator<Item = R>>(&mut self, iter: I) {
+		for range in iter {
+			self.insert(range)
+		}
+	}
+}
+
+impl<R: AsRange, C: Default + SlabMut<Node<AnyRange<R::Item>, ()>>> FromIterator<R>
+	for RangeSet<R::Item, C>
+where
+	R::Item: Clone + Measure + PartialOrd,
+	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<R::Item>, ()>>,
+	for<'r> C::ItemMut<'r>: Into<&'r mut Node<AnyRange<R::Item>, ()>>,
+{
+	fn from_iter<I: IntoIterator<Item = R>>(iter: I) -> Self {
+		let mut result = Self::default();
+		result.extend(iter);
+		result
+	}
+}

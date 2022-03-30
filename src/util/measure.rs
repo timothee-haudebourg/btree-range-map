@@ -3,7 +3,10 @@ use super::PartialEnum;
 /// Distance between singletons.
 #[allow(clippy::len_without_is_empty)]
 pub trait Measure<U = Self>: PartialEnum {
-	type Len: Default + std::ops::Add<Output = Self::Len> + std::ops::Sub<Output = Self::Len>;
+	type Len: Default
+		+ std::ops::Add<Output = Self::Len>
+		+ std::ops::Sub<Output = Self::Len>
+		+ PartialEq;
 
 	/// Returns the length of the given element.
 	fn len(&self) -> Self::Len;

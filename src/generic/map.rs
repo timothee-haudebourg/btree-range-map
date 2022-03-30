@@ -54,6 +54,13 @@ where
 		len
 	}
 
+	pub fn is_empty(&self) -> bool
+	where
+		K: Measure,
+	{
+		self.len() == K::Len::default()
+	}
+
 	pub fn range_count(&self) -> usize {
 		self.btree.len()
 	}
