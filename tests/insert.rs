@@ -1,4 +1,4 @@
-use btree_range_map::RangeMap;
+use btree_range_map::{RangeMap, RangeSet};
 
 #[test]
 fn insert_single() {
@@ -258,4 +258,14 @@ fn update_merge_ranges_rev2() {
 	assert_eq!(range_map.get(10), Some(&false));
 	assert_eq!(range_map.get(19), Some(&false));
 	assert_eq!(range_map.get(20), None);
+}
+
+#[test]
+fn insert_chars() {
+	let mut charset = RangeSet::new();
+	charset.insert('c');
+	charset.insert('a');
+	charset.insert('b');
+	assert_eq!(charset.range_count(), 1);
+	assert_eq!(charset.len(), 3);
 }

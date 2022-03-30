@@ -39,6 +39,10 @@ impl<T, C: Slab<Node<AnyRange<T>, ()>>> RangeSet<T, C>
 where
 	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<T>, ()>>,
 {
+	pub fn range_count(&self) -> usize {
+		self.map.range_count()
+	}
+
 	pub fn len(&self) -> T::Len
 	where
 		T: Measure,

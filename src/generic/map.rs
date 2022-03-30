@@ -273,7 +273,7 @@ where
 				&& next_item.value() == self.btree.item(addr).unwrap().value()
 			{
 				// Merge with the next item.
-				let (_, non_normalized_new_addr) = self.btree.remove_at(next_addr).unwrap();
+				let (_, non_normalized_new_addr) = self.btree.remove_at(addr).unwrap();
 				let new_addr = self.btree.normalize(non_normalized_new_addr).unwrap();
 				let item = self.btree.item_mut(new_addr).unwrap();
 				item.key_mut().add(&new_key);
