@@ -43,7 +43,7 @@ pub trait RangePartialOrd<T = Self> {
 impl<R: AsRange, U> RangePartialOrd<U> for R
 where
 	R::Item: PartialOrd<U> + Measure<U>,
-	U: PartialEnum
+	U: PartialEnum,
 {
 	fn range_partial_cmp<S: AsRange<Item = U>>(&self, other: &S) -> Option<RangeOrdering> {
 		match direct_bound_partial_cmp(self.start(), other.start(), true) {
@@ -103,7 +103,7 @@ pub trait BoundPartialOrd<T = Self> {
 impl<B: AsBound, U> BoundPartialOrd<U> for Directed<B>
 where
 	B::Item: PartialOrd<U> + Measure<U>,
-	U: PartialEnum
+	U: PartialEnum,
 {
 	fn bound_partial_cmp<C: AsBound<Item = U>>(
 		&self,
@@ -190,7 +190,7 @@ pub(crate) fn direct_bound_partial_cmp<T, U>(
 ) -> Option<BoundOrdering>
 where
 	T: Measure<U> + PartialOrd<U>,
-	U: PartialEnum
+	U: PartialEnum,
 {
 	let included_ord = if start {
 		Ordering::Greater
@@ -213,9 +213,9 @@ where
 			Some(_) => Some(BoundOrdering::Excluded(false)),
 			None => None,
 		},
-		(Bound::Included(v1), Bound::Unbounded) => {
-			Some(BoundOrdering::Included((start && *v1 == U::MIN) || (!start && *v1 == U::MAX)))
-		},
+		(Bound::Included(v1), Bound::Unbounded) => Some(BoundOrdering::Included(
+			(start && *v1 == U::MIN) || (!start && *v1 == U::MAX),
+		)),
 		(Bound::Excluded(v1), Bound::Included(v2)) => match v1.partial_cmp(v2) {
 			Some(Ordering::Equal) => Some(BoundOrdering::Included(false)),
 			Some(ord) if ord == included_ord => Some(BoundOrdering::Included(false)),
@@ -238,11 +238,11 @@ where
 				Some(BoundOrdering::Included(true))
 			} else {
 				Some(BoundOrdering::Excluded(
-					(start && v2.pred().map(|pred| T::MIN == pred).unwrap_or(false)) ||
-					(!start && v2.succ().map(|succ| T::MIN == succ).unwrap_or(false))
+					(start && v2.pred().map(|pred| T::MIN == pred).unwrap_or(false))
+						|| (!start && v2.succ().map(|succ| T::MIN == succ).unwrap_or(false)),
 				))
 			}
-		},
+		}
 		(Bound::Unbounded, Bound::Excluded(_)) => Some(BoundOrdering::Excluded(false)),
 		(Bound::Unbounded, Bound::Unbounded) => Some(BoundOrdering::Included(true)),
 	}
@@ -269,7 +269,9 @@ where
 			ord if ord == included_ord => BoundOrdering::Included(distance_zero(v1, v2)),
 			_ => BoundOrdering::Excluded(false),
 		},
-		(Bound::Included(v1), Bound::Unbounded) => BoundOrdering::Included((start && *v1 == T::MIN) || (!start && *v1 == T::MAX)),
+		(Bound::Included(v1), Bound::Unbounded) => {
+			BoundOrdering::Included((start && *v1 == T::MIN) || (!start && *v1 == T::MAX))
+		}
 		(Bound::Excluded(v1), Bound::Included(v2)) => match v1.cmp(v2) {
 			Ordering::Equal => BoundOrdering::Included(false),
 			ord if ord == included_ord => BoundOrdering::Included(false),
@@ -290,11 +292,11 @@ where
 				BoundOrdering::Included(true)
 			} else {
 				BoundOrdering::Excluded(
-					(start && v2.pred().map(|pred| T::MIN == pred).unwrap_or(false)) ||
-					(!start && v2.succ().map(|succ| T::MIN == succ).unwrap_or(false))
+					(start && v2.pred().map(|pred| T::MIN == pred).unwrap_or(false))
+						|| (!start && v2.succ().map(|succ| T::MIN == succ).unwrap_or(false)),
 				)
 			}
-		},
+		}
 		(Bound::Unbounded, Bound::Excluded(_)) => BoundOrdering::Excluded(false),
 		(Bound::Unbounded, Bound::Unbounded) => BoundOrdering::Included(true),
 	}
@@ -303,7 +305,7 @@ where
 pub(crate) fn direct_bound_partial_eq<T, U>(b1: Bound<&T>, b2: Bound<&U>, start: bool) -> bool
 where
 	T: Measure<U> + PartialOrd<U>,
-	U: PartialEnum
+	U: PartialEnum,
 {
 	match direct_bound_partial_cmp(b1, b2, start) {
 		Some(BoundOrdering::Included(eq)) => eq,
@@ -325,7 +327,7 @@ pub(crate) fn inverse_bound_partial_cmp<T, U>(
 ) -> Option<BoundOrdering>
 where
 	T: Measure<U> + PartialOrd<U>,
-	U: PartialEnum
+	U: PartialEnum,
 {
 	let included_ord = if b2_start {
 		Ordering::Greater
@@ -372,22 +374,22 @@ where
 				Some(BoundOrdering::Excluded(true))
 			} else {
 				Some(BoundOrdering::Included(
-					(!b2_start && v1.pred().map(|pred| pred == U::MIN).unwrap_or(false)) ||
-					(b2_start && v1.succ().map(|succ| succ == U::MAX).unwrap_or(false))
+					(!b2_start && v1.pred().map(|pred| pred == U::MIN).unwrap_or(false))
+						|| (b2_start && v1.succ().map(|succ| succ == U::MAX).unwrap_or(false)),
 				))
 			}
-		},
+		}
 		(Bound::Unbounded, Bound::Included(_)) => Some(BoundOrdering::Included(false)),
 		(Bound::Unbounded, Bound::Excluded(v2)) => {
 			if (!b2_start && T::MIN == *v2) || (b2_start && T::MAX == *v2) {
 				Some(BoundOrdering::Excluded(true))
 			} else {
 				Some(BoundOrdering::Included(
-					(!b2_start && v2.pred().map(|pred| T::MIN == pred).unwrap_or(false)) ||
-					(b2_start && v2.succ().map(|succ| T::MAX == succ).unwrap_or(false))
+					(!b2_start && v2.pred().map(|pred| T::MIN == pred).unwrap_or(false))
+						|| (b2_start && v2.succ().map(|succ| T::MAX == succ).unwrap_or(false)),
 				))
 			}
-		},
+		}
 		(Bound::Unbounded, Bound::Unbounded) => Some(BoundOrdering::Included(false)),
 	}
 }

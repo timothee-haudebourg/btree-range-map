@@ -11,8 +11,8 @@ use btree_slab::generic::{
 use cc_traits::{Slab, SlabMut};
 use std::{
 	cmp::{Ord, Ordering, PartialOrd},
+	fmt,
 	hash::{Hash, Hasher},
-	fmt
 };
 
 /// Range map.
@@ -862,11 +862,7 @@ where
 									end: Bound::Unbounded,
 								};
 
-								break if gap.ref_is_empty() {
-									None
-								} else {
-									Some(gap)
-								};
+								break if gap.ref_is_empty() { None } else { Some(gap) };
 							}
 							None => {
 								break Some(AnyRange {

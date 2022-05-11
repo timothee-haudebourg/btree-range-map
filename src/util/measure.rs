@@ -193,10 +193,10 @@ impl_measure!(@both usize, i32, i128, u128);
 impl_measure!(@both usize, i64, i128, u128);
 
 macro_rules! impl_f_measure {
-	(@refl $ty:ty, $len:ty) => {
+	($ty:ty, $zero:expr, $min:expr, $max:expr) => {
 		impl PartialEnum for $ty {
-			const MIN: $ty = <$ty>::NEG_INFINITY;
-			const MAX: $ty = <$ty>::INFINITY;
+			const MIN: $ty = $min;
+			const MAX: $ty = $max;
 
 			fn pred(&self) -> Option<Self> {
 				None
@@ -207,31 +207,24 @@ macro_rules! impl_f_measure {
 			}
 		}
 
-		impl_f_measure!($ty, $ty, $ty, $len);
-	};
-	(@both $ty1:ty, $ty2:ty, $cast:ty, $len:ty) => {
-		impl_f_measure!($ty1, $ty2, $cast, $len);
-		impl_f_measure!($ty2, $ty1, $cast, $len);
-	};
-	($ty1:ty, $ty2:ty, $cast:ty, $len:ty) => {
-		impl Measure<$ty2> for $ty1 {
-			type Len = $len;
+		impl Measure<$ty> for $ty {
+			type Len = $ty;
 
-			fn len(&self) -> $len {
-				0.0
+			fn len(&self) -> $ty {
+				$zero
 			}
 
-			fn distance(&self, other: &$ty2) -> $len {
+			fn distance(&self, other: &$ty) -> $ty {
 				if self.is_infinite() || other.is_infinite() {
-					Self::INFINITY
+					$max
 				} else {
-					let a = *self as $cast;
-					let b = *other as $cast;
+					let a = *self as $ty;
+					let b = *other as $ty;
 
 					if a > b {
-						(a - b) as $len
+						(a - b) as $ty
 					} else {
-						(b - a) as $len
+						(b - a) as $ty
 					}
 				}
 			}
@@ -239,5 +232,25 @@ macro_rules! impl_f_measure {
 	};
 }
 
-impl_f_measure!(@refl f32, f32);
-impl_f_measure!(@refl f64, f64);
+impl_f_measure!(f32, 0.0f32, f32::NEG_INFINITY, f32::INFINITY);
+impl_f_measure!(f64, 0.0f64, f64::NEG_INFINITY, f64::INFINITY);
+
+#[cfg(feature = "ordered-float")]
+mod ordered_float {
+	use super::{Measure, PartialEnum};
+	use ordered_float::NotNan;
+
+	impl_f_measure!(
+		NotNan<f32>,
+		unsafe { NotNan::new_unchecked(0.0f32) },
+		unsafe { NotNan::new_unchecked(f32::NEG_INFINITY) },
+		unsafe { NotNan::new_unchecked(f32::INFINITY) }
+	);
+
+	impl_f_measure!(
+		NotNan<f64>,
+		unsafe { NotNan::new_unchecked(0.0f64) },
+		unsafe { NotNan::new_unchecked(f64::NEG_INFINITY) },
+		unsafe { NotNan::new_unchecked(f64::INFINITY) }
+	);
+}

@@ -7,8 +7,8 @@ use btree_slab::generic::Node;
 use cc_traits::{Slab, SlabMut};
 use std::{
 	cmp::Ordering,
+	fmt,
 	hash::{Hash, Hasher},
-	fmt
 };
 
 /// Range set.
@@ -260,10 +260,7 @@ where
 
 #[cfg(test)]
 mod test {
-	use crate::{
-		RangeSet,
-		AnyRange
-	};
+	use crate::{AnyRange, RangeSet};
 
 	#[test]
 	fn gaps1() {
