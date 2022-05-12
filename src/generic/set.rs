@@ -1,10 +1,7 @@
-use crate::{
-	generic::RangeMap,
-	util::{Measure, PartialEnum},
-	AnyRange, AsRange,
-};
+use crate::{generic::RangeMap, AnyRange, AsRange};
 use btree_slab::generic::Node;
 use cc_traits::{Slab, SlabMut};
+use range_traits::{Measure, PartialEnum};
 use std::{
 	cmp::Ordering,
 	fmt,
@@ -46,14 +43,14 @@ where
 
 	pub fn len(&self) -> T::Len
 	where
-		T: Measure,
+		T: Measure + PartialEnum,
 	{
 		self.map.len()
 	}
 
 	pub fn is_empty(&self) -> bool
 	where
-		T: Measure,
+		T: Measure + PartialEnum,
 	{
 		self.len() == T::Len::default()
 	}
@@ -104,21 +101,21 @@ where
 {
 	pub fn insert<R: AsRange<Item = T>>(&mut self, key: R)
 	where
-		T: Clone + PartialOrd + Measure,
+		T: Clone + PartialEnum + Measure,
 	{
 		self.map.insert(key, ())
 	}
 
 	pub fn remove<R: AsRange<Item = T>>(&mut self, key: R)
 	where
-		T: Clone + PartialOrd + Measure,
+		T: Clone + PartialEnum + Measure,
 	{
 		self.map.remove(key)
 	}
 
 	pub fn complement(&self) -> Self
 	where
-		T: Clone + Measure + PartialOrd,
+		T: Clone + Measure + PartialEnum,
 		C: Default,
 	{
 		self.gaps().map(AnyRange::cloned).collect()
@@ -128,7 +125,7 @@ where
 impl<K, L, C: Slab<Node<AnyRange<K>, ()>>, D: Slab<Node<AnyRange<L>, ()>>> PartialEq<RangeSet<L, D>>
 	for RangeSet<K, C>
 where
-	L: Measure<K> + PartialOrd<K>,
+	L: Measure<K> + PartialOrd<K> + PartialEnum,
 	K: PartialEnum,
 	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, ()>>,
 	for<'r> D::ItemRef<'r>: Into<&'r Node<AnyRange<L>, ()>>,
@@ -140,7 +137,7 @@ where
 
 impl<K, C: Slab<Node<AnyRange<K>, ()>>> Eq for RangeSet<K, C>
 where
-	K: Measure + Ord,
+	K: Measure + PartialEnum + Ord,
 	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, ()>>,
 {
 }
@@ -148,7 +145,7 @@ where
 impl<K, L, C: Slab<Node<AnyRange<K>, ()>>, D: Slab<Node<AnyRange<L>, ()>>>
 	PartialOrd<RangeSet<L, D>> for RangeSet<K, C>
 where
-	L: Measure<K> + PartialOrd<K>,
+	L: Measure<K> + PartialOrd<K> + PartialEnum,
 	K: PartialEnum,
 	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, ()>>,
 	for<'r> D::ItemRef<'r>: Into<&'r Node<AnyRange<L>, ()>>,
@@ -160,7 +157,7 @@ where
 
 impl<K, C: Slab<Node<AnyRange<K>, ()>>> Ord for RangeSet<K, C>
 where
-	K: Measure + Ord,
+	K: Measure + PartialEnum + Ord,
 	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, ()>>,
 {
 	fn cmp(&self, other: &Self) -> Ordering {

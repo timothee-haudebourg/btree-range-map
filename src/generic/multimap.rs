@@ -3,11 +3,11 @@ use crate::{
 		map::{IntoIter, Iter},
 		RangeMap,
 	},
-	util::Measure,
 	AnyRange, AsRange,
 };
 use btree_slab::generic::Node;
 use cc_traits::{SetMut, Slab, SlabMut};
+use range_traits::{Measure, PartialEnum};
 
 /// Multi map.
 ///
@@ -66,7 +66,7 @@ where
 {
 	pub fn insert<R: AsRange<Item = K>, V>(&mut self, key: R, value: V)
 	where
-		K: Clone + PartialOrd + Measure,
+		K: Clone + PartialEnum + Measure,
 		V: PartialEq + Clone,
 		S: SetMut<V> + PartialEq + Clone + Default,
 	{
@@ -83,7 +83,7 @@ where
 
 	pub fn remove<R: AsRange<Item = K>, V>(&mut self, key: R, value: &V)
 	where
-		K: Clone + PartialOrd + Measure,
+		K: Clone + PartialEnum + Measure,
 		V: PartialEq + Clone,
 		S: SetMut<V> + PartialEq + Clone + Default,
 	{

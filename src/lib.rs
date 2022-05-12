@@ -84,7 +84,6 @@
 //! ```
 pub mod generic;
 mod range;
-pub mod util;
 
 pub use range::*;
 

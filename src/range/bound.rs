@@ -1,5 +1,5 @@
 use super::{direct_bound_partial_cmp, BoundOrdering, BoundPartialOrd, Measure};
-use crate::util::PartialEnum;
+use range_traits::PartialEnum;
 use std::{
 	cmp::Ordering,
 	hash::{Hash, Hasher},
@@ -86,7 +86,7 @@ impl<'a, T: Hash + PartialEnum> Hash for Directed<Bound<&'a T>> {
 
 impl<T, U> PartialEq<Directed<Bound<&U>>> for Directed<Bound<&T>>
 where
-	T: Measure<U> + PartialOrd<U>,
+	T: Measure<U> + PartialOrd<U> + PartialEnum,
 	U: PartialEnum,
 {
 	fn eq(&self, other: &Directed<Bound<&U>>) -> bool {
@@ -96,7 +96,7 @@ where
 
 impl<T, U> PartialOrd<Directed<Bound<&U>>> for Directed<Bound<&T>>
 where
-	T: Measure<U> + PartialOrd<U>,
+	T: Measure<U> + PartialOrd<U> + PartialEnum,
 	U: PartialEnum,
 {
 	fn partial_cmp(&self, other: &Directed<Bound<&U>>) -> Option<Ordering> {
@@ -115,7 +115,7 @@ where
 	}
 }
 
-pub(crate) fn min_bound<'a, T: Measure + PartialOrd>(
+pub(crate) fn min_bound<'a, T: Measure + PartialOrd + PartialEnum>(
 	a: Bound<&'a T>,
 	b: Bound<&'a T>,
 	start: bool,
@@ -138,7 +138,7 @@ pub(crate) fn min_bound<'a, T: Measure + PartialOrd>(
 	}
 }
 
-pub(crate) fn max_bound<'a, T: Measure + PartialOrd>(
+pub(crate) fn max_bound<'a, T: Measure + PartialOrd + PartialEnum>(
 	a: Bound<&'a T>,
 	b: Bound<&'a T>,
 	start: bool,

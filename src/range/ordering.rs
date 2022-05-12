@@ -1,5 +1,5 @@
 use super::{AsBound, AsRange, Directed, Measure};
-use crate::util::PartialEnum;
+use range_traits::PartialEnum;
 use std::{
 	cmp::{Ordering, PartialOrd},
 	ops::Bound,
@@ -102,7 +102,7 @@ pub trait BoundPartialOrd<T = Self> {
 
 impl<B: AsBound, U> BoundPartialOrd<U> for Directed<B>
 where
-	B::Item: PartialOrd<U> + Measure<U>,
+	B::Item: PartialOrd<U> + Measure<U> + PartialEnum,
 	U: PartialEnum,
 {
 	fn bound_partial_cmp<C: AsBound<Item = U>>(
@@ -189,7 +189,7 @@ pub(crate) fn direct_bound_partial_cmp<T, U>(
 	start: bool,
 ) -> Option<BoundOrdering>
 where
-	T: Measure<U> + PartialOrd<U>,
+	T: Measure<U> + PartialOrd<U> + PartialEnum,
 	U: PartialEnum,
 {
 	let included_ord = if start {
@@ -250,7 +250,7 @@ where
 
 pub(crate) fn direct_bound_cmp<T>(b1: Bound<&T>, b2: Bound<&T>, start: bool) -> BoundOrdering
 where
-	T: Measure + Ord,
+	T: Measure + PartialEnum + Ord,
 {
 	let included_ord = if start {
 		Ordering::Greater
@@ -304,7 +304,7 @@ where
 
 pub(crate) fn direct_bound_partial_eq<T, U>(b1: Bound<&T>, b2: Bound<&U>, start: bool) -> bool
 where
-	T: Measure<U> + PartialOrd<U>,
+	T: Measure<U> + PartialOrd<U> + PartialEnum,
 	U: PartialEnum,
 {
 	match direct_bound_partial_cmp(b1, b2, start) {
@@ -326,7 +326,7 @@ pub(crate) fn inverse_bound_partial_cmp<T, U>(
 	b2_start: bool,
 ) -> Option<BoundOrdering>
 where
-	T: Measure<U> + PartialOrd<U>,
+	T: Measure<U> + PartialOrd<U> + PartialEnum,
 	U: PartialEnum,
 {
 	let included_ord = if b2_start {

@@ -1,6 +1,6 @@
 [package]
 name = "btree-range-map"
-version = "0.2.6"
+version = "0.3.0"
 authors = ["Timothée Haudebourg <author@haudebourg.net>"]
 edition = "2021"
 
@@ -16,4 +16,4 @@ readme = "README.md"
 cc-traits = "0.8.0"
 btree-slab = "0.4.0"
 slab = "0.4.5"
-ordered-float = { version = "3.0.0", optional = true }
+range-traits = "0.1.0"

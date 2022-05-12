@@ -1,7 +1,6 @@
 use super::Node;
 use crate::{
 	range::{Difference, ProductArg},
-	util::{Measure, PartialEnum},
 	AnyRange, AsRange, RangeOrdering, RangePartialOrd,
 };
 use btree_slab::generic::{
@@ -9,6 +8,7 @@ use btree_slab::generic::{
 	node::{Address, Item, Offset},
 };
 use cc_traits::{Slab, SlabMut};
+use range_traits::{Measure, PartialEnum};
 use std::{
 	cmp::{Ord, Ordering, PartialOrd},
 	fmt,
@@ -45,7 +45,7 @@ where
 {
 	pub fn len(&self) -> K::Len
 	where
-		K: Measure,
+		K: Measure + PartialEnum,
 	{
 		let mut len = K::Len::default();
 		for (range, _) in self {
@@ -57,7 +57,7 @@ where
 
 	pub fn is_empty(&self) -> bool
 	where
-		K: Measure,
+		K: Measure + PartialEnum,
 	{
 		self.len() == K::Len::default()
 	}
@@ -68,7 +68,7 @@ where
 
 	fn address_of<T>(&self, key: &T, connected: bool) -> Result<Address, Address>
 	where
-		K: Clone + PartialOrd + Measure,
+		K: Clone + PartialEnum + Measure,
 		T: RangePartialOrd<K>,
 	{
 		match self.btree.root_id() {
@@ -79,7 +79,7 @@ where
 
 	fn address_in<T>(&self, mut id: usize, key: &T, connected: bool) -> Result<Address, Address>
 	where
-		K: Clone + PartialOrd + Measure,
+		K: Clone + PartialEnum + Measure,
 		T: RangePartialOrd<K>,
 	{
 		loop {
@@ -100,7 +100,7 @@ where
 		connected: bool,
 	) -> Result<Offset, (usize, Option<usize>)>
 	where
-		K: Clone + PartialOrd + Measure,
+		K: Clone + PartialEnum + Measure,
 		T: RangePartialOrd<K>,
 	{
 		match self.btree.node(id) {
@@ -144,7 +144,7 @@ where
 
 	pub fn get(&self, key: K) -> Option<&V>
 	where
-		K: Clone + PartialOrd + RangePartialOrd + Measure,
+		K: Clone + PartialEnum + RangePartialOrd + Measure,
 	{
 		match self.address_of(&key, false) {
 			Ok(addr) => Some(self.btree.item(addr).unwrap().value()),
@@ -184,7 +184,7 @@ where
 impl<K, L, V, W, C: Slab<Node<AnyRange<K>, V>>, D: Slab<Node<AnyRange<L>, W>>>
 	PartialEq<RangeMap<L, W, D>> for RangeMap<K, V, C>
 where
-	L: Measure<K> + PartialOrd<K>,
+	L: Measure<K> + PartialOrd<K> + PartialEnum,
 	K: PartialEnum,
 	W: PartialEq<V>,
 	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, V>>,
@@ -197,7 +197,7 @@ where
 
 impl<K, V, C: Slab<Node<AnyRange<K>, V>>> Eq for RangeMap<K, V, C>
 where
-	K: Measure + Ord,
+	K: Measure + PartialEnum + Ord,
 	V: Eq,
 	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, V>>,
 {
@@ -206,7 +206,7 @@ where
 impl<K, L, V, W, C: Slab<Node<AnyRange<K>, V>>, D: Slab<Node<AnyRange<L>, W>>>
 	PartialOrd<RangeMap<L, W, D>> for RangeMap<K, V, C>
 where
-	L: Measure<K> + PartialOrd<K>,
+	L: Measure<K> + PartialOrd<K> + PartialEnum,
 	K: PartialEnum,
 	W: PartialOrd<V>,
 	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, V>>,
@@ -219,7 +219,7 @@ where
 
 impl<K, V, C: Slab<Node<AnyRange<K>, V>>> Ord for RangeMap<K, V, C>
 where
-	K: Measure + Ord,
+	K: Measure + PartialEnum + Ord,
 	V: Ord,
 	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, V>>,
 {
@@ -260,7 +260,7 @@ where
 {
 	fn merge_forward(&mut self, addr: Address, next_addr: Option<Address>)
 	where
-		K: Clone + PartialOrd + Measure,
+		K: Clone + PartialEnum + Measure,
 		V: PartialEq,
 	{
 		if let Some(next_addr) = next_addr {
@@ -282,7 +282,7 @@ where
 		new_key: AnyRange<K>,
 	) -> (Address, Option<Address>)
 	where
-		K: Clone + PartialOrd + Measure,
+		K: Clone + PartialEnum + Measure,
 		V: PartialEq,
 	{
 		if let Some(next_addr) = next_addr {
@@ -313,7 +313,7 @@ where
 		new_value: V,
 	) -> (Address, Option<Address>, V)
 	where
-		K: Clone + PartialOrd + Measure,
+		K: Clone + PartialEnum + Measure,
 		V: PartialEq,
 	{
 		if let Some(next_addr) = next_addr {
@@ -346,7 +346,7 @@ where
 		value: V,
 	) -> (Address, Option<Address>)
 	where
-		K: Clone + PartialOrd + Measure,
+		K: Clone + PartialEnum + Measure,
 		V: PartialEq,
 	{
 		let next_item = self.btree.item(addr).unwrap();
@@ -373,7 +373,7 @@ where
 
 	pub fn update<R: AsRange<Item = K>, F>(&mut self, key: R, f: F)
 	where
-		K: Clone + PartialOrd + Measure,
+		K: Clone + PartialEnum + Measure,
 		F: Fn(Option<&V>) -> Option<V>,
 		V: PartialEq + Clone,
 	{
@@ -544,7 +544,7 @@ where
 	/// Insert a new key-value binding.
 	pub fn insert<R: AsRange<Item = K>>(&mut self, key: R, value: V)
 	where
-		K: Clone + PartialOrd + Measure,
+		K: Clone + PartialEnum + Measure,
 		V: PartialEq + Clone,
 	{
 		let mut key = AnyRange::from(key);
@@ -734,7 +734,7 @@ where
 	/// Remove a key.
 	pub fn remove<R: AsRange<Item = K>>(&mut self, key: R)
 	where
-		K: Clone + PartialOrd + Measure,
+		K: Clone + PartialEnum + Measure,
 		V: Clone,
 	{
 		let key = AnyRange::from(key);
@@ -811,7 +811,7 @@ pub struct Gaps<'a, K, V, C> {
 	done: bool,
 }
 
-impl<'a, K: Measure + PartialOrd, V, C: Slab<Node<AnyRange<K>, V>>> Iterator for Gaps<'a, K, V, C>
+impl<'a, K: Measure + PartialEnum, V, C: Slab<Node<AnyRange<K>, V>>> Iterator for Gaps<'a, K, V, C>
 where
 	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, V>>,
 {
@@ -881,7 +881,7 @@ where
 /// Search for the index of the gratest item less/below or equal/including the given element.
 ///
 /// If `connected` is `true`, then it will search for the gratest item less/below or equal/including **or connected to** the given element.
-pub fn binary_search<T: Measure + PartialOrd, U, V, I: AsRef<Item<AnyRange<T>, V>>>(
+pub fn binary_search<T: Measure + PartialEnum, U, V, I: AsRef<Item<AnyRange<T>, V>>>(
 	items: &[I],
 	element: &U,
 	connected: bool,

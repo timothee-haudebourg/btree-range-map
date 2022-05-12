@@ -2,7 +2,7 @@ use super::{
 	direct_bound_cmp, direct_bound_partial_cmp, direct_bound_partial_eq, is_range_empty, max_bound,
 	min_bound, AsRange, Bound, BoundOrdering, Directed, Measure,
 };
-use crate::util::PartialEnum;
+use range_traits::{Bounded, PartialEnum};
 use std::{
 	cmp::{Ord, Ordering, PartialOrd},
 	fmt,
@@ -33,14 +33,14 @@ impl<T> AnyRange<T> {
 
 	pub fn is_empty(&self) -> bool
 	where
-		T: PartialOrd + Measure,
+		T: Measure + PartialEnum,
 	{
 		is_range_empty(self.start_bound(), self.end_bound())
 	}
 
 	pub fn len(&self) -> T::Len
 	where
-		T: Measure,
+		T: Measure + Bounded,
 	{
 		match (self.start_bound(), self.end_bound()) {
 			(Bound::Included(a), Bound::Included(b)) => a.distance(b) + b.len(),
@@ -57,7 +57,7 @@ impl<T> AnyRange<T> {
 
 	pub fn pick(&self) -> Option<T>
 	where
-		T: PartialOrd + Clone + Measure,
+		T: Clone + Measure + PartialEnum + Bounded,
 	{
 		self.first().or_else(|| self.last())
 	}
@@ -65,7 +65,7 @@ impl<T> AnyRange<T> {
 	/// Get the first element of the range if there is one.
 	pub fn first(&self) -> Option<T>
 	where
-		T: PartialOrd + Clone + Measure,
+		T: Clone + Measure + PartialEnum + Bounded,
 	{
 		if self.is_empty() {
 			None
@@ -81,7 +81,7 @@ impl<T> AnyRange<T> {
 	/// Get the last element of the range if there is one.
 	pub fn last(&self) -> Option<T>
 	where
-		T: PartialOrd + Clone + Measure,
+		T: Clone + Measure + PartialEnum + Bounded,
 	{
 		if self.is_empty() {
 			None
@@ -96,7 +96,7 @@ impl<T> AnyRange<T> {
 
 	pub fn add<S>(&mut self, other: &S)
 	where
-		T: Clone + Measure + PartialOrd,
+		T: Clone + Measure + PartialEnum,
 		S: RangeBounds<T>,
 	{
 		self.start = min_bound(self.start_bound(), other.start_bound(), true).cloned();
@@ -105,7 +105,7 @@ impl<T> AnyRange<T> {
 
 	pub fn intersects<S>(&self, other: &S) -> bool
 	where
-		T: Measure + PartialOrd,
+		T: Measure + PartialEnum,
 		S: RangeBounds<T>,
 	{
 		Directed::End(self.end_bound()) > Directed::Start(other.start_bound())
@@ -114,7 +114,7 @@ impl<T> AnyRange<T> {
 
 	pub fn pick_in_intersection<S>(&self, other: &S) -> Option<T>
 	where
-		T: Measure + Clone + PartialOrd,
+		T: Clone + Measure + PartialEnum,
 		S: AsRange + RangeBounds<T>,
 	{
 		if self.intersects(other) {
@@ -164,7 +164,7 @@ impl<T: fmt::Debug> fmt::Debug for AnyRange<T> {
 impl<'a, T> AnyRange<&'a T> {
 	pub fn ref_is_empty(&self) -> bool
 	where
-		T: PartialOrd + Measure,
+		T: PartialEnum + Measure,
 	{
 		is_range_empty(self.start_bound().cloned(), self.end_bound().cloned())
 	}
@@ -172,7 +172,7 @@ impl<'a, T> AnyRange<&'a T> {
 
 impl<T, U> PartialEq<AnyRange<U>> for AnyRange<T>
 where
-	T: Measure<U> + PartialOrd<U>,
+	T: Measure<U> + PartialOrd<U> + PartialEnum,
 	U: PartialEnum,
 {
 	fn eq(&self, other: &AnyRange<U>) -> bool {
@@ -181,11 +181,11 @@ where
 	}
 }
 
-impl<T> Eq for AnyRange<T> where T: Measure + Ord {}
+impl<T> Eq for AnyRange<T> where T: Measure + PartialEnum + Ord {}
 
 impl<T, U> PartialOrd<AnyRange<U>> for AnyRange<T>
 where
-	T: Measure<U> + PartialOrd<U>,
+	T: Measure<U> + PartialOrd<U> + PartialEnum,
 	U: PartialEnum,
 {
 	fn partial_cmp(&self, other: &AnyRange<U>) -> Option<Ordering> {
@@ -208,7 +208,7 @@ where
 
 impl<T> Ord for AnyRange<T>
 where
-	T: Measure + Ord,
+	T: Measure + PartialEnum + Ord,
 {
 	fn cmp(&self, other: &Self) -> Ordering {
 		// Directed::Start(self.start_bound()).partial_cmp(Directed::Start(other.start_bound()))

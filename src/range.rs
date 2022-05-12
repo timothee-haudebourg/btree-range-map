@@ -1,4 +1,4 @@
-use crate::util::{Measure, PartialEnum};
+use range_traits::{Measure, PartialEnum};
 use std::{
 	cmp::PartialOrd,
 	ops::{Bound, RangeBounds},
@@ -22,7 +22,7 @@ pub use ordering::*;
 /// Types that can be interpreted as ranges.
 pub trait AsRange: Sized {
 	/// Type of the elements of the range.
-	type Item: Measure + PartialOrd;
+	type Item: Measure + PartialEnum;
 
 	/// Start bound of the range.
 	fn start(&self) -> Bound<&Self::Item>;
@@ -281,7 +281,7 @@ singleton_range!(char);
 
 macro_rules! standard_range {
 	($ty:path) => {
-		impl<T: Measure + PartialOrd> AsRange for $ty {
+		impl<T: Measure + PartialEnum> AsRange for $ty {
 			type Item = T;
 
 			fn start(&self) -> Bound<&Self::Item> {
@@ -308,7 +308,7 @@ standard_range!(RangeFromExcludedToIncluded<T>);
 #[inline(always)]
 fn is_range_empty<T, U>(start: Bound<&T>, end: Bound<&U>) -> bool
 where
-	T: PartialOrd<U> + Measure<U>,
+	T: PartialOrd<U> + Measure<U> + PartialEnum,
 	U: PartialEnum,
 {
 	Directed::Start(start) > Directed::End(end)
