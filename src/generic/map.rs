@@ -7,8 +7,8 @@ use btree_slab::generic::{
 	map::{BTreeExt, BTreeExtMut, BTreeMap},
 	node::{Address, Item, Offset},
 };
-use cc_traits::{Slab, SlabMut};
-use range_traits::{Measure, PartialEnum};
+use cc_traits::{SimpleCollectionMut, SimpleCollectionRef, Slab, SlabMut};
+use range_traits::{Bounded, Measure, PartialEnum};
 use std::{
 	cmp::{Ord, Ordering, PartialOrd},
 	fmt,
@@ -41,11 +41,11 @@ impl<K, T, C: Default> Default for RangeMap<K, T, C> {
 
 impl<K, V, C: Slab<Node<AnyRange<K>, V>>> RangeMap<K, V, C>
 where
-	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, V>>,
+	C: SimpleCollectionRef,
 {
 	pub fn len(&self) -> K::Len
 	where
-		K: Measure + PartialEnum,
+		K: Measure + PartialEnum + Bounded,
 	{
 		let mut len = K::Len::default();
 		for (range, _) in self {
@@ -55,11 +55,23 @@ where
 		len
 	}
 
+	pub fn bounded_len(&self) -> Option<K::Len>
+	where
+		K: Measure + PartialEnum,
+	{
+		let mut len = K::Len::default();
+		for (range, _) in self {
+			len = len + range.bounded_len()?
+		}
+
+		Some(len)
+	}
+
 	pub fn is_empty(&self) -> bool
 	where
 		K: Measure + PartialEnum,
 	{
-		self.len() == K::Len::default()
+		self.bounded_len() == Some(K::Len::default())
 	}
 
 	pub fn range_count(&self) -> usize {
@@ -168,7 +180,7 @@ where
 
 impl<K: fmt::Debug, V: fmt::Debug, C: Slab<Node<AnyRange<K>, V>>> fmt::Debug for RangeMap<K, V, C>
 where
-	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, V>>,
+	C: SimpleCollectionRef,
 {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		write!(f, "{{")?;
@@ -187,8 +199,8 @@ where
 	L: Measure<K> + PartialOrd<K> + PartialEnum,
 	K: PartialEnum,
 	W: PartialEq<V>,
-	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, V>>,
-	for<'r> D::ItemRef<'r>: Into<&'r Node<AnyRange<L>, W>>,
+	C: SimpleCollectionRef,
+	D: SimpleCollectionRef,
 {
 	fn eq(&self, other: &RangeMap<L, W, D>) -> bool {
 		self.btree == other.btree
@@ -199,7 +211,7 @@ impl<K, V, C: Slab<Node<AnyRange<K>, V>>> Eq for RangeMap<K, V, C>
 where
 	K: Measure + PartialEnum + Ord,
 	V: Eq,
-	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, V>>,
+	C: SimpleCollectionRef,
 {
 }
 
@@ -209,8 +221,8 @@ where
 	L: Measure<K> + PartialOrd<K> + PartialEnum,
 	K: PartialEnum,
 	W: PartialOrd<V>,
-	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, V>>,
-	for<'r> D::ItemRef<'r>: Into<&'r Node<AnyRange<L>, W>>,
+	C: SimpleCollectionRef,
+	D: SimpleCollectionRef,
 {
 	fn partial_cmp(&self, other: &RangeMap<L, W, D>) -> Option<Ordering> {
 		self.btree.partial_cmp(&other.btree)
@@ -221,7 +233,7 @@ impl<K, V, C: Slab<Node<AnyRange<K>, V>>> Ord for RangeMap<K, V, C>
 where
 	K: Measure + PartialEnum + Ord,
 	V: Ord,
-	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, V>>,
+	C: SimpleCollectionRef,
 {
 	fn cmp(&self, other: &Self) -> Ordering {
 		self.btree.cmp(&other.btree)
@@ -232,7 +244,7 @@ impl<K, V, C: Slab<Node<AnyRange<K>, V>>> Hash for RangeMap<K, V, C>
 where
 	K: Hash + PartialEnum,
 	V: Hash,
-	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, V>>,
+	C: SimpleCollectionRef,
 {
 	fn hash<H: Hasher>(&self, h: &mut H) {
 		for range in self {
@@ -243,7 +255,7 @@ where
 
 impl<'a, K, V, C: Slab<Node<AnyRange<K>, V>>> IntoIterator for &'a RangeMap<K, V, C>
 where
-	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, V>>,
+	C: SimpleCollectionRef,
 {
 	type Item = (&'a AnyRange<K>, &'a V);
 	type IntoIter = Iter<'a, K, V, C>;
@@ -255,8 +267,8 @@ where
 
 impl<K, V, C: SlabMut<Node<AnyRange<K>, V>>> RangeMap<K, V, C>
 where
-	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, V>>,
-	for<'r> C::ItemMut<'r>: Into<&'r mut Node<AnyRange<K>, V>>,
+	C: SimpleCollectionRef,
+	C: SimpleCollectionMut,
 {
 	fn merge_forward(&mut self, addr: Address, next_addr: Option<Address>)
 	where
@@ -790,8 +802,8 @@ where
 
 impl<K, V, C: SlabMut<Node<AnyRange<K>, V>>> IntoIterator for RangeMap<K, V, C>
 where
-	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, V>>,
-	for<'r> C::ItemMut<'r>: Into<&'r mut Node<AnyRange<K>, V>>,
+	C: SimpleCollectionRef,
+	C: SimpleCollectionMut,
 {
 	type Item = (AnyRange<K>, V);
 	type IntoIter = IntoIter<K, V, C>;
@@ -813,7 +825,7 @@ pub struct Gaps<'a, K, V, C> {
 
 impl<'a, K: Measure + PartialEnum, V, C: Slab<Node<AnyRange<K>, V>>> Iterator for Gaps<'a, K, V, C>
 where
-	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, V>>,
+	C: SimpleCollectionRef,
 {
 	type Item = AnyRange<&'a K>;
 

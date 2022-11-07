@@ -1,7 +1,7 @@
 use crate::{generic::RangeMap, AnyRange, AsRange};
 use btree_slab::generic::Node;
-use cc_traits::{Slab, SlabMut};
-use range_traits::{Measure, PartialEnum};
+use cc_traits::{SimpleCollectionMut, SimpleCollectionRef, Slab, SlabMut};
+use range_traits::{Bounded, Measure, PartialEnum};
 use std::{
 	cmp::Ordering,
 	fmt,
@@ -35,7 +35,7 @@ impl<T, C: Default> Default for RangeSet<T, C> {
 
 impl<T, C: Slab<Node<AnyRange<T>, ()>>> RangeSet<T, C>
 where
-	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<T>, ()>>,
+	C: SimpleCollectionRef,
 {
 	pub fn range_count(&self) -> usize {
 		self.map.range_count()
@@ -43,16 +43,23 @@ where
 
 	pub fn len(&self) -> T::Len
 	where
-		T: Measure + PartialEnum,
+		T: Measure + PartialEnum + Bounded,
 	{
 		self.map.len()
+	}
+
+	pub fn bounded_len(&self) -> Option<T::Len>
+	where
+		T: Measure + PartialEnum,
+	{
+		self.map.bounded_len()
 	}
 
 	pub fn is_empty(&self) -> bool
 	where
 		T: Measure + PartialEnum,
 	{
-		self.len() == T::Len::default()
+		self.map.is_empty()
 	}
 
 	pub fn iter(&self) -> Iter<T, C> {
@@ -69,7 +76,7 @@ where
 
 impl<T: fmt::Debug, C: Slab<Node<AnyRange<T>, ()>>> fmt::Debug for RangeSet<T, C>
 where
-	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<T>, ()>>,
+	C: SimpleCollectionRef,
 {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		write!(f, "{{")?;
@@ -84,7 +91,7 @@ where
 
 impl<'a, T, C: Slab<Node<AnyRange<T>, ()>>> IntoIterator for &'a RangeSet<T, C>
 where
-	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<T>, ()>>,
+	C: SimpleCollectionRef,
 {
 	type Item = &'a AnyRange<T>;
 	type IntoIter = Iter<'a, T, C>;
@@ -96,8 +103,8 @@ where
 
 impl<T, C: SlabMut<Node<AnyRange<T>, ()>>> RangeSet<T, C>
 where
-	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<T>, ()>>,
-	for<'r> C::ItemMut<'r>: Into<&'r mut Node<AnyRange<T>, ()>>,
+	C: SimpleCollectionRef,
+	C: SimpleCollectionMut,
 {
 	pub fn insert<R: AsRange<Item = T>>(&mut self, key: R)
 	where
@@ -127,8 +134,8 @@ impl<K, L, C: Slab<Node<AnyRange<K>, ()>>, D: Slab<Node<AnyRange<L>, ()>>> Parti
 where
 	L: Measure<K> + PartialOrd<K> + PartialEnum,
 	K: PartialEnum,
-	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, ()>>,
-	for<'r> D::ItemRef<'r>: Into<&'r Node<AnyRange<L>, ()>>,
+	C: SimpleCollectionRef,
+	D: SimpleCollectionRef,
 {
 	fn eq(&self, other: &RangeSet<L, D>) -> bool {
 		self.map == other.map
@@ -138,7 +145,7 @@ where
 impl<K, C: Slab<Node<AnyRange<K>, ()>>> Eq for RangeSet<K, C>
 where
 	K: Measure + PartialEnum + Ord,
-	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, ()>>,
+	C: SimpleCollectionRef,
 {
 }
 
@@ -147,8 +154,8 @@ impl<K, L, C: Slab<Node<AnyRange<K>, ()>>, D: Slab<Node<AnyRange<L>, ()>>>
 where
 	L: Measure<K> + PartialOrd<K> + PartialEnum,
 	K: PartialEnum,
-	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, ()>>,
-	for<'r> D::ItemRef<'r>: Into<&'r Node<AnyRange<L>, ()>>,
+	C: SimpleCollectionRef,
+	D: SimpleCollectionRef,
 {
 	fn partial_cmp(&self, other: &RangeSet<L, D>) -> Option<Ordering> {
 		self.map.partial_cmp(&other.map)
@@ -158,7 +165,7 @@ where
 impl<K, C: Slab<Node<AnyRange<K>, ()>>> Ord for RangeSet<K, C>
 where
 	K: Measure + PartialEnum + Ord,
-	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, ()>>,
+	C: SimpleCollectionRef,
 {
 	fn cmp(&self, other: &Self) -> Ordering {
 		self.map.cmp(&other.map)
@@ -168,7 +175,7 @@ where
 impl<K, C: Slab<Node<AnyRange<K>, ()>>> Hash for RangeSet<K, C>
 where
 	K: Hash + PartialEnum,
-	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, ()>>,
+	C: SimpleCollectionRef,
 {
 	fn hash<H: Hasher>(&self, h: &mut H) {
 		self.map.hash(h)
@@ -177,8 +184,8 @@ where
 
 impl<T, C: SlabMut<Node<AnyRange<T>, ()>>> IntoIterator for RangeSet<T, C>
 where
-	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<T>, ()>>,
-	for<'r> C::ItemMut<'r>: Into<&'r mut Node<AnyRange<T>, ()>>,
+	C: SimpleCollectionRef,
+	C: SimpleCollectionMut,
 {
 	type Item = AnyRange<T>;
 	type IntoIter = IntoIter<T, C>;
@@ -196,7 +203,7 @@ pub struct Iter<'a, T, C> {
 
 impl<'a, T, C: Slab<Node<AnyRange<T>, ()>>> Iterator for Iter<'a, T, C>
 where
-	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<T>, ()>>,
+	C: SimpleCollectionRef,
 {
 	type Item = &'a AnyRange<T>;
 
@@ -214,8 +221,8 @@ pub struct IntoIter<T, C> {
 
 impl<T, C: SlabMut<Node<AnyRange<T>, ()>>> Iterator for IntoIter<T, C>
 where
-	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<T>, ()>>,
-	for<'r> C::ItemMut<'r>: Into<&'r mut Node<AnyRange<T>, ()>>,
+	C: SimpleCollectionRef,
+	C: SimpleCollectionMut,
 {
 	type Item = AnyRange<T>;
 
@@ -231,8 +238,8 @@ impl<R: AsRange, C: SlabMut<Node<AnyRange<R::Item>, ()>>> std::iter::Extend<R>
 	for RangeSet<R::Item, C>
 where
 	R::Item: Clone + Measure + PartialOrd,
-	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<R::Item>, ()>>,
-	for<'r> C::ItemMut<'r>: Into<&'r mut Node<AnyRange<R::Item>, ()>>,
+	C: SimpleCollectionRef,
+	C: SimpleCollectionMut,
 {
 	fn extend<I: IntoIterator<Item = R>>(&mut self, iter: I) {
 		for range in iter {
@@ -245,8 +252,8 @@ impl<R: AsRange, C: Default + SlabMut<Node<AnyRange<R::Item>, ()>>> FromIterator
 	for RangeSet<R::Item, C>
 where
 	R::Item: Clone + Measure + PartialOrd,
-	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<R::Item>, ()>>,
-	for<'r> C::ItemMut<'r>: Into<&'r mut Node<AnyRange<R::Item>, ()>>,
+	C: SimpleCollectionRef,
+	C: SimpleCollectionMut,
 {
 	fn from_iter<I: IntoIterator<Item = R>>(iter: I) -> Self {
 		let mut result = Self::default();

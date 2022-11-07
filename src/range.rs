@@ -1,4 +1,4 @@
-use range_traits::{Measure, PartialEnum};
+pub use range_traits::{Measure, PartialEnum};
 use std::{
 	cmp::PartialOrd,
 	ops::{Bound, RangeBounds},

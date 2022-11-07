@@ -2,7 +2,7 @@ use super::{
 	direct_bound_cmp, direct_bound_partial_cmp, direct_bound_partial_eq, is_range_empty, max_bound,
 	min_bound, AsRange, Bound, BoundOrdering, Directed, Measure,
 };
-use range_traits::{Bounded, PartialEnum};
+use range_traits::{Bounded, MaybeBounded, PartialEnum};
 use std::{
 	cmp::{Ord, Ordering, PartialOrd},
 	fmt,
@@ -45,13 +45,32 @@ impl<T> AnyRange<T> {
 		match (self.start_bound(), self.end_bound()) {
 			(Bound::Included(a), Bound::Included(b)) => a.distance(b) + b.len(),
 			(Bound::Included(a), Bound::Excluded(b)) => a.distance(b),
-			(Bound::Included(a), Bound::Unbounded) => a.distance(&T::MAX),
+			(Bound::Included(a), Bound::Unbounded) => a.distance(&T::max()),
 			(Bound::Excluded(a), Bound::Included(b)) => a.distance(b) - a.len() + b.len(),
 			(Bound::Excluded(a), Bound::Excluded(b)) => a.distance(b) - a.len(),
-			(Bound::Excluded(a), Bound::Unbounded) => a.distance(&T::MAX) - a.len(),
-			(Bound::Unbounded, Bound::Included(b)) => T::MIN.distance(b) + b.len(),
-			(Bound::Unbounded, Bound::Excluded(b)) => T::MIN.distance(b),
-			(Bound::Unbounded, Bound::Unbounded) => T::MIN.distance(&T::MAX),
+			(Bound::Excluded(a), Bound::Unbounded) => a.distance(&T::max()) - a.len(),
+			(Bound::Unbounded, Bound::Included(b)) => T::min().distance(b) + b.len(),
+			(Bound::Unbounded, Bound::Excluded(b)) => T::min().distance(b),
+			(Bound::Unbounded, Bound::Unbounded) => T::min().distance(&T::max()),
+		}
+	}
+
+	pub fn bounded_len(&self) -> Option<T::Len>
+	where
+		T: Measure + MaybeBounded,
+	{
+		match (self.start_bound(), self.end_bound()) {
+			(Bound::Included(a), Bound::Included(b)) => Some(a.distance(b) + b.len()),
+			(Bound::Included(a), Bound::Excluded(b)) => Some(a.distance(b)),
+			(Bound::Included(a), Bound::Unbounded) => T::max().map(|m| a.distance(&m)),
+			(Bound::Excluded(a), Bound::Included(b)) => Some(a.distance(b) - a.len() + b.len()),
+			(Bound::Excluded(a), Bound::Excluded(b)) => Some(a.distance(b) - a.len()),
+			(Bound::Excluded(a), Bound::Unbounded) => T::max().map(|m| a.distance(&m) - a.len()),
+			(Bound::Unbounded, Bound::Included(b)) => T::min().map(|m| m.distance(b) + b.len()),
+			(Bound::Unbounded, Bound::Excluded(b)) => T::min().map(|m| m.distance(b)),
+			(Bound::Unbounded, Bound::Unbounded) => {
+				T::min().and_then(|min| T::max().map(|max| min.distance(&max)))
+			}
 		}
 	}
 
@@ -73,7 +92,7 @@ impl<T> AnyRange<T> {
 			match self.start_bound() {
 				Bound::Included(a) => Some(a.clone()),
 				Bound::Excluded(a) => a.succ(),
-				Bound::Unbounded => Some(T::MIN),
+				Bound::Unbounded => Some(<T as Bounded>::min()),
 			}
 		}
 	}
@@ -89,7 +108,7 @@ impl<T> AnyRange<T> {
 			match self.end_bound() {
 				Bound::Included(a) => Some(a.clone()),
 				Bound::Excluded(a) => a.pred(),
-				Bound::Unbounded => Some(T::MAX),
+				Bound::Unbounded => Some(<T as Bounded>::max()),
 			}
 		}
 	}
@@ -112,37 +131,37 @@ impl<T> AnyRange<T> {
 			&& Directed::End(other.end_bound()) > Directed::Start(self.start_bound())
 	}
 
-	pub fn pick_in_intersection<S>(&self, other: &S) -> Option<T>
-	where
-		T: Clone + Measure + PartialEnum,
-		S: AsRange + RangeBounds<T>,
-	{
-		if self.intersects(other) {
-			if Directed::End(self.end_bound()) <= Directed::End(other.end_bound()) {
-				if other.is_empty() {
-					None
-				} else {
-					// pick between other.start and self.end
-					Some(match other.start_bound() {
-						Bound::Included(a) => a.clone(),
-						Bound::Excluded(a) => a.succ().unwrap(),
-						Bound::Unbounded => T::MIN,
-					})
-				}
-			} else if self.is_empty() {
-				None
-			} else {
-				// pick between self.start and other.end
-				Some(match self.start_bound() {
-					Bound::Included(a) => a.clone(),
-					Bound::Excluded(a) => a.succ().unwrap(),
-					Bound::Unbounded => T::MIN,
-				})
-			}
-		} else {
-			None
-		}
-	}
+	// pub fn pick_in_intersection<S>(&self, other: &S) -> Option<T>
+	// where
+	// 	T: Clone + Measure + PartialEnum,
+	// 	S: AsRange + RangeBounds<T>,
+	// {
+	// 	if self.intersects(other) {
+	// 		if Directed::End(self.end_bound()) <= Directed::End(other.end_bound()) {
+	// 			if other.is_empty() {
+	// 				None
+	// 			} else {
+	// 				// pick between other.start and self.end
+	// 				Some(match other.start_bound() {
+	// 					Bound::Included(a) => a.clone(),
+	// 					Bound::Excluded(a) => a.succ().unwrap(),
+	// 					Bound::Unbounded => T::MIN,
+	// 				})
+	// 			}
+	// 		} else if self.is_empty() {
+	// 			None
+	// 		} else {
+	// 			// pick between self.start and other.end
+	// 			Some(match self.start_bound() {
+	// 				Bound::Included(a) => a.clone(),
+	// 				Bound::Excluded(a) => a.succ().unwrap(),
+	// 				Bound::Unbounded => T::MIN,
+	// 			})
+	// 		}
+	// 	} else {
+	// 		None
+	// 	}
+	// }
 }
 
 impl<T: fmt::Debug> fmt::Debug for AnyRange<T> {

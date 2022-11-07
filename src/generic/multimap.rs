@@ -6,7 +6,7 @@ use crate::{
 	AnyRange, AsRange,
 };
 use btree_slab::generic::Node;
-use cc_traits::{SetMut, Slab, SlabMut};
+use cc_traits::{SetMut, SimpleCollectionMut, SimpleCollectionRef, Slab, SlabMut};
 use range_traits::{Measure, PartialEnum};
 
 /// Multi map.
@@ -39,7 +39,7 @@ impl<K, S, C: Default> Default for RangeMultiMap<K, S, C> {
 
 impl<K, S, C: Slab<Node<AnyRange<K>, S>>> RangeMultiMap<K, S, C>
 where
-	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, S>>,
+	C: SimpleCollectionRef,
 {
 	pub fn iter(&self) -> Iter<K, S, C> {
 		self.map.iter()
@@ -49,7 +49,7 @@ where
 impl<'a, K: Clone + PartialOrd + Measure, S, C: Slab<Node<AnyRange<K>, S>>> IntoIterator
 	for &'a RangeMultiMap<K, S, C>
 where
-	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, S>>,
+	C: SimpleCollectionRef,
 {
 	type Item = (&'a AnyRange<K>, &'a S);
 	type IntoIter = Iter<'a, K, S, C>;
@@ -61,8 +61,8 @@ where
 
 impl<K, S, C: SlabMut<Node<AnyRange<K>, S>>> RangeMultiMap<K, S, C>
 where
-	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, S>>,
-	for<'r> C::ItemMut<'r>: Into<&'r mut Node<AnyRange<K>, S>>,
+	C: SimpleCollectionRef,
+	C: SimpleCollectionMut,
 {
 	pub fn insert<R: AsRange<Item = K>, V>(&mut self, key: R, value: V)
 	where
@@ -105,8 +105,8 @@ where
 impl<K: Clone + PartialOrd + Measure, S, C: SlabMut<Node<AnyRange<K>, S>>> IntoIterator
 	for RangeMultiMap<K, S, C>
 where
-	for<'r> C::ItemRef<'r>: Into<&'r Node<AnyRange<K>, S>>,
-	for<'r> C::ItemMut<'r>: Into<&'r mut Node<AnyRange<K>, S>>,
+	C: SimpleCollectionRef,
+	C: SimpleCollectionMut,
 {
 	type Item = (AnyRange<K>, S);
 	type IntoIter = IntoIter<K, S, C>;
