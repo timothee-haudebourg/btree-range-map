@@ -1,4 +1,4 @@
-use super::{direct_bound_partial_cmp, BoundOrdering, BoundPartialOrd, Measure};
+use super::{direct_bound_partial_cmp, BoundOrd, BoundOrdering, BoundPartialOrd, Measure};
 use range_traits::PartialEnum;
 use std::{
 	cmp::Ordering,
@@ -42,6 +42,24 @@ pub(crate) fn invert_bound<T>(bound: Bound<T>) -> Option<Bound<T>> {
 pub enum Directed<T> {
 	Start(T),
 	End(T),
+}
+
+impl<T> Directed<T> {
+	/// Returns the directed value, without direction.
+	pub fn unwrap(self) -> T {
+		match self {
+			Self::Start(t) => t,
+			Self::End(t) => t,
+		}
+	}
+
+	/// Returns a reference to the directed value, without direction.
+	pub fn value(&self) -> &T {
+		match self {
+			Self::Start(t) => t,
+			Self::End(t) => t,
+		}
+	}
 }
 
 impl<T> Directed<Bound<T>> {
@@ -94,6 +112,8 @@ where
 	}
 }
 
+impl<T> Eq for Directed<Bound<&T>> where T: Measure + Ord + PartialEnum {}
+
 impl<T, U> PartialOrd<Directed<Bound<&U>>> for Directed<Bound<&T>>
 where
 	T: Measure<U> + PartialOrd<U> + PartialEnum,
@@ -111,6 +131,25 @@ where
 				Directed::End(_) => Some(Ordering::Greater),
 			},
 			None => None,
+		}
+	}
+}
+
+impl<T> Ord for Directed<Bound<&T>>
+where
+	T: Measure + Ord + PartialEnum,
+{
+	fn cmp(&self, other: &Directed<Bound<&T>>) -> Ordering {
+		match self.bound_cmp(other) {
+			BoundOrdering::Included(true) => Ordering::Equal,
+			BoundOrdering::Included(false) => match other {
+				Directed::Start(_) => Ordering::Greater,
+				Directed::End(_) => Ordering::Less,
+			},
+			BoundOrdering::Excluded(_) => match other {
+				Directed::Start(_) => Ordering::Less,
+				Directed::End(_) => Ordering::Greater,
+			},
 		}
 	}
 }
