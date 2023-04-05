@@ -131,6 +131,16 @@ impl<T> AnyRange<T> {
 			&& Directed::End(other.end_bound()) > Directed::Start(self.start_bound())
 	}
 
+	pub fn intersection(&self, other: &Self) -> Self
+	where
+		T: Clone + Measure + PartialEnum,
+	{
+		Self {
+			start: max_bound(self.start_bound(), other.start_bound(), true).cloned(),
+			end: min_bound(self.end_bound(), other.end_bound(), false).cloned(),
+		}
+	}
+
 	// pub fn pick_in_intersection<S>(&self, other: &S) -> Option<T>
 	// where
 	// 	T: Clone + Measure + PartialEnum,
