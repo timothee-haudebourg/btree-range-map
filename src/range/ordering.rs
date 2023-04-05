@@ -126,6 +126,28 @@ where
 	}
 }
 
+pub trait BoundOrd<T = Self> {
+	fn bound_cmp<B: AsBound<Item = T>>(&self, other: &Directed<B>) -> BoundOrdering;
+}
+
+impl<B: AsBound> BoundOrd<B::Item> for Directed<B>
+where
+	B::Item: Ord + Measure + PartialEnum,
+{
+	fn bound_cmp<C: AsBound<Item = B::Item>>(&self, other: &Directed<C>) -> BoundOrdering {
+		match (self, other) {
+			(Directed::Start(a), Directed::Start(b)) => {
+				direct_bound_cmp(a.bound(), b.bound(), true)
+			}
+			(Directed::Start(a), Directed::End(b)) => {
+				inverse_bound_cmp(a.bound(), b.bound(), false)
+			}
+			(Directed::End(a), Directed::Start(b)) => inverse_bound_cmp(a.bound(), b.bound(), true),
+			(Directed::End(a), Directed::End(b)) => direct_bound_cmp(a.bound(), b.bound(), false),
+		}
+	}
+}
+
 pub enum Dist {
 	Equals,
 	Zero,
@@ -429,6 +451,113 @@ where
 			}
 		}
 		(Bound::Unbounded, Bound::Unbounded) => Some(BoundOrdering::Included(false)),
+	}
+}
+
+pub(crate) fn inverse_bound_cmp<T>(b1: Bound<&T>, b2: Bound<&T>, b2_start: bool) -> BoundOrdering
+where
+	T: Measure + Ord + PartialEnum,
+{
+	let included_ord = if b2_start {
+		Ordering::Greater
+	} else {
+		Ordering::Less
+	};
+
+	match (b1, b2) {
+		(Bound::Included(v1), Bound::Included(v2)) => match v1.cmp(v2) {
+			Ordering::Equal => BoundOrdering::Included(true),
+			ord if ord == included_ord => BoundOrdering::Included(false),
+			_ => BoundOrdering::Excluded(distance_zero(v1, v2)),
+		},
+		(Bound::Included(v1), Bound::Excluded(v2)) => match v1.cmp(v2) {
+			Ordering::Equal => BoundOrdering::Excluded(true),
+			ord if ord == included_ord => BoundOrdering::Included(distance_zero(v1, v2)),
+			_ => BoundOrdering::Excluded(false),
+		},
+		(Bound::Included(_), Bound::Unbounded) => BoundOrdering::Included(false),
+		(Bound::Excluded(v1), Bound::Included(v2)) => match v1.cmp(v2) {
+			Ordering::Equal => BoundOrdering::Excluded(true), // []v2=v1
+			ord if ord == included_ord => BoundOrdering::Included(distance_zero(v1, v2)),
+			_ => BoundOrdering::Excluded(false),
+		},
+		(Bound::Excluded(v1), Bound::Excluded(v2)) => match v1.cmp(v2) {
+			Ordering::Equal => BoundOrdering::Excluded(false),
+			ord if ord == included_ord => match dist(v1, v2) {
+				Dist::Zero => BoundOrdering::Excluded(true), // v2 [] v1
+				Dist::One => BoundOrdering::Included(true),  // v2 [ x ] v1
+				_ => BoundOrdering::Included(false),         // v2 [ x .. y ] v1
+			},
+			_ => BoundOrdering::Excluded(false), // ] v1 v2 [
+		},
+		(Bound::Excluded(v1), Bound::Unbounded) => {
+			if (!b2_start
+				&& <T as MaybeBounded>::min()
+					.map(|m| *v1 == m)
+					.unwrap_or(false))
+				|| (b2_start
+					&& <T as MaybeBounded>::max()
+						.map(|m| *v1 == m)
+						.unwrap_or(false))
+			{
+				BoundOrdering::Excluded(true)
+			} else {
+				BoundOrdering::Included(
+					(!b2_start
+						&& v1
+							.pred()
+							.map(|pred| {
+								<T as MaybeBounded>::min()
+									.map(|m| pred == m)
+									.unwrap_or(false)
+							})
+							.unwrap_or(false)) || (b2_start
+						&& v1
+							.succ()
+							.map(|succ| {
+								<T as MaybeBounded>::max()
+									.map(|m| succ == m)
+									.unwrap_or(false)
+							})
+							.unwrap_or(false)),
+				)
+			}
+		}
+		(Bound::Unbounded, Bound::Included(_)) => BoundOrdering::Included(false),
+		(Bound::Unbounded, Bound::Excluded(v2)) => {
+			if (!b2_start
+				&& <T as MaybeBounded>::min()
+					.map(|m| *v2 == m)
+					.unwrap_or(false))
+				|| (b2_start
+					&& <T as MaybeBounded>::max()
+						.map(|m| *v2 == m)
+						.unwrap_or(false))
+			{
+				BoundOrdering::Excluded(true)
+			} else {
+				BoundOrdering::Included(
+					(!b2_start
+						&& v2
+							.pred()
+							.map(|pred| {
+								<T as MaybeBounded>::min()
+									.map(|m| pred == m)
+									.unwrap_or(false)
+							})
+							.unwrap_or(false)) || (b2_start
+						&& v2
+							.succ()
+							.map(|succ| {
+								<T as MaybeBounded>::max()
+									.map(|m| succ == m)
+									.unwrap_or(false)
+							})
+							.unwrap_or(false)),
+				)
+			}
+		}
+		(Bound::Unbounded, Bound::Unbounded) => BoundOrdering::Included(false),
 	}
 }
 
