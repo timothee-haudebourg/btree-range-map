@@ -127,8 +127,8 @@ impl<T> AnyRange<T> {
 		T: Measure + PartialEnum,
 		S: RangeBounds<T>,
 	{
-		Directed::End(self.end_bound()) > Directed::Start(other.start_bound())
-			&& Directed::End(other.end_bound()) > Directed::Start(self.start_bound())
+		Directed::End(self.end_bound()) >= Directed::Start(other.start_bound())
+			&& Directed::End(other.end_bound()) >= Directed::Start(self.start_bound())
 	}
 
 	pub fn intersection(&self, other: &Self) -> Self
@@ -289,5 +289,79 @@ impl<T> RangeBounds<T> for AnyRange<T> {
 			Bound::Excluded(v) => Bound::Excluded(v),
 			Bound::Unbounded => Bound::Unbounded,
 		}
+	}
+}
+
+impl<T> From<std::ops::Range<T>> for AnyRange<T> {
+	fn from(value: std::ops::Range<T>) -> Self {
+		Self {
+			start: Bound::Included(value.start),
+			end: Bound::Excluded(value.end),
+		}
+	}
+}
+
+impl<T> From<std::ops::RangeInclusive<T>> for AnyRange<T> {
+	fn from(value: std::ops::RangeInclusive<T>) -> Self {
+		let (start, end) = value.into_inner();
+
+		Self {
+			start: Bound::Included(start),
+			end: Bound::Included(end),
+		}
+	}
+}
+
+impl<T> From<std::ops::RangeFrom<T>> for AnyRange<T> {
+	fn from(value: std::ops::RangeFrom<T>) -> Self {
+		Self {
+			start: Bound::Included(value.start),
+			end: Bound::Unbounded,
+		}
+	}
+}
+
+impl<T> From<std::ops::RangeTo<T>> for AnyRange<T> {
+	fn from(value: std::ops::RangeTo<T>) -> Self {
+		Self {
+			start: Bound::Unbounded,
+			end: Bound::Excluded(value.end),
+		}
+	}
+}
+
+impl<T> From<std::ops::RangeToInclusive<T>> for AnyRange<T> {
+	fn from(value: std::ops::RangeToInclusive<T>) -> Self {
+		Self {
+			start: Bound::Unbounded,
+			end: Bound::Included(value.end),
+		}
+	}
+}
+
+impl<T> From<std::ops::RangeFull> for AnyRange<T> {
+	fn from(_: std::ops::RangeFull) -> Self {
+		Self {
+			start: Bound::Unbounded,
+			end: Bound::Unbounded,
+		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn intersection_test1() {
+		let a: AnyRange<char> = ('A'..='A').into();
+		assert!(a.intersects(&a))
+	}
+
+	#[test]
+	fn intersection_test2() {
+		let a: AnyRange<char> = ('A'..='A').into();
+		let b: AnyRange<char> = ('B'..='B').into();
+		assert!(!a.intersects(&b))
 	}
 }
