@@ -1,4 +1,4 @@
-use crate::{generic::RangeMap, AnyRange, AsRange};
+use crate::{generic::RangeMap, AnyRange, AsRange, RangePartialOrd};
 use btree_slab::generic::Node;
 use cc_traits::{SimpleCollectionMut, SimpleCollectionRef, Slab, SlabMut};
 use range_traits::{Bounded, Measure, PartialEnum};
@@ -60,6 +60,20 @@ where
 		T: Measure + PartialEnum,
 	{
 		self.map.is_empty()
+	}
+
+	pub fn intersects<R: AsRange<Item = T>>(&self, values: R) -> bool
+	where
+		T: Clone + PartialEnum + Measure,
+	{
+		self.map.intersects(values)
+	}
+
+	pub fn contains(&self, value: T) -> bool
+	where
+		T: Clone + PartialEnum + RangePartialOrd + Measure,
+	{
+		self.map.contains_key(value)
 	}
 
 	pub fn iter(&self) -> Iter<T, C> {
