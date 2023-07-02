@@ -269,3 +269,14 @@ fn insert_chars() {
 	assert_eq!(charset.range_count(), 1);
 	assert_eq!(charset.len(), 3);
 }
+
+#[test]
+fn insert_chars2() {
+	let mut charset = RangeSet::new();
+	charset.insert('%');
+	charset.insert('$');
+	assert_eq!(charset.range_count(), 1);
+	assert_eq!(charset.len(), 2);
+	assert!(charset.contains('%'));
+	assert!(charset.contains('$'))
+}

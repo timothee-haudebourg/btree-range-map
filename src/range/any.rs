@@ -17,6 +17,10 @@ pub struct AnyRange<T> {
 }
 
 impl<T> AnyRange<T> {
+	pub fn new(start: Bound<T>, end: Bound<T>) -> Self {
+		Self { start, end }
+	}
+
 	pub fn from<R: AsRange<Item = T>>(range: R) -> AnyRange<T>
 	where
 		T: Clone,

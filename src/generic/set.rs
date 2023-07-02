@@ -1,4 +1,4 @@
-use crate::{generic::RangeMap, AnyRange, AsRange, RangePartialOrd};
+use crate::{generic::RangeMap, AnyRange, AsRange, IntoRange, RangePartialOrd};
 use btree_slab::generic::Node;
 use cc_traits::{SimpleCollectionMut, SimpleCollectionRef, Slab, SlabMut};
 use range_traits::{Bounded, Measure, PartialEnum};
@@ -120,7 +120,7 @@ where
 	C: SimpleCollectionRef,
 	C: SimpleCollectionMut,
 {
-	pub fn insert<R: AsRange<Item = T>>(&mut self, key: R)
+	pub fn insert<R: IntoRange<Item = T>>(&mut self, key: R)
 	where
 		T: Clone + PartialEnum + Measure,
 	{
@@ -248,7 +248,7 @@ where
 /// Iterator over the gaps (unbound keys) of a `RangeSet`.
 pub type Gaps<'a, T, C> = crate::generic::map::Gaps<'a, T, (), C>;
 
-impl<R: AsRange, C: SlabMut<Node<AnyRange<R::Item>, ()>>> std::iter::Extend<R>
+impl<R: IntoRange, C: SlabMut<Node<AnyRange<R::Item>, ()>>> std::iter::Extend<R>
 	for RangeSet<R::Item, C>
 where
 	R::Item: Clone + Measure + PartialOrd,
@@ -262,7 +262,7 @@ where
 	}
 }
 
-impl<R: AsRange, C: Default + SlabMut<Node<AnyRange<R::Item>, ()>>> FromIterator<R>
+impl<R: IntoRange, C: Default + SlabMut<Node<AnyRange<R::Item>, ()>>> FromIterator<R>
 	for RangeSet<R::Item, C>
 where
 	R::Item: Clone + Measure + PartialOrd,

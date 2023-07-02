@@ -1,7 +1,7 @@
 use super::Node;
 use crate::{
 	range::{Difference, ProductArg},
-	AnyRange, AsRange, RangeOrdering, RangePartialOrd,
+	AnyRange, AsRange, IntoRange, RangeOrdering, RangePartialOrd,
 };
 use btree_slab::generic::{
 	map::{BTreeExt, BTreeExtMut, BTreeMap},
@@ -80,7 +80,7 @@ where
 
 	fn address_of<T>(&self, key: &T, connected: bool) -> Result<Address, Address>
 	where
-		K: Clone + PartialEnum + Measure,
+		K: PartialEnum + Measure,
 		T: RangePartialOrd<K>,
 	{
 		match self.btree.root_id() {
@@ -91,7 +91,7 @@ where
 
 	fn address_in<T>(&self, mut id: usize, key: &T, connected: bool) -> Result<Address, Address>
 	where
-		K: Clone + PartialEnum + Measure,
+		K: PartialEnum + Measure,
 		T: RangePartialOrd<K>,
 	{
 		loop {
@@ -112,7 +112,7 @@ where
 		connected: bool,
 	) -> Result<Offset, (usize, Option<usize>)>
 	where
-		K: Clone + PartialEnum + Measure,
+		K: PartialEnum + Measure,
 		T: RangePartialOrd<K>,
 	{
 		match self.btree.node(id) {
@@ -156,10 +156,10 @@ where
 
 	pub fn intersects<R: AsRange<Item = K>>(&self, key: R) -> bool
 	where
-		K: Clone + PartialEnum + Measure,
+		K: PartialEnum + Measure,
 		V: PartialEq,
 	{
-		let key = AnyRange::from(key);
+		// let key = AnyRange::from(key);
 
 		if key.is_empty() {
 			false
@@ -170,14 +170,14 @@ where
 
 	pub fn contains_key(&self, key: K) -> bool
 	where
-		K: Clone + PartialEnum + RangePartialOrd + Measure,
+		K: PartialEnum + RangePartialOrd + Measure,
 	{
 		self.address_of(&key, false).is_ok()
 	}
 
 	pub fn get(&self, key: K) -> Option<&V>
 	where
-		K: Clone + PartialEnum + RangePartialOrd + Measure,
+		K: PartialEnum + RangePartialOrd + Measure,
 	{
 		match self.address_of(&key, false) {
 			Ok(addr) => Some(self.btree.item(addr).unwrap().value()),
@@ -574,13 +574,31 @@ where
 		}
 	}
 
+	pub fn insert_disconnected<R: IntoRange<Item = K>>(
+		&mut self,
+		key: R,
+		value: V,
+	) -> Result<(), (AnyRange<K>, V)>
+	where
+		K: PartialEnum + Measure,
+	{
+		let key = key.into_range();
+		match self.address_of(&key, true) {
+			Ok(_) => Err((key, value)),
+			Err(addr) => {
+				self.btree.insert_at(addr, Item::new(key, value));
+				Ok(())
+			}
+		}
+	}
+
 	/// Insert a new key-value binding.
-	pub fn insert<R: AsRange<Item = K>>(&mut self, key: R, value: V)
+	pub fn insert<R: IntoRange<Item = K>>(&mut self, key: R, value: V)
 	where
 		K: Clone + PartialEnum + Measure,
 		V: PartialEq + Clone,
 	{
-		let mut key = AnyRange::from(key);
+		let mut key = key.into_range();
 
 		if key.is_empty() {
 			return;

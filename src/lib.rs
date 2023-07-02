@@ -85,6 +85,9 @@
 pub mod generic;
 mod range;
 
+#[cfg(feature = "serde")]
+mod serde;
+
 pub use range::*;
 
 pub type DefaultSetContainer<K> = slab::Slab<generic::Node<AnyRange<K>, ()>>;

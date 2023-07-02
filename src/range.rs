@@ -147,6 +147,10 @@ pub trait AsRange: Sized {
 	}
 }
 
+pub trait IntoRange: AsRange {
+	fn into_range(self) -> AnyRange<Self::Item>;
+}
+
 fn crop_left<'a, R: AsRange>(
 	range: &'a R,
 	other_end: Bound<&'a R::Item>,
@@ -260,6 +264,12 @@ macro_rules! singleton_range {
 				Bound::Included(self)
 			}
 		}
+
+		impl IntoRange for $ty {
+			fn into_range(self) -> AnyRange<Self::Item> {
+				AnyRange::new(Bound::Included(self), Bound::Included(self))
+			}
+		}
 	};
 }
 
@@ -280,7 +290,7 @@ singleton_range!(f64);
 singleton_range!(char);
 
 macro_rules! standard_range {
-	($ty:path) => {
+	($ty:path, |$this:ident| $into_range:expr) => {
 		impl<T: Measure + PartialEnum> AsRange for $ty {
 			type Item = T;
 
@@ -292,18 +302,48 @@ macro_rules! standard_range {
 				self.end_bound()
 			}
 		}
+
+		impl<T: Measure + PartialEnum> IntoRange for $ty {
+			fn into_range($this) -> AnyRange<Self::Item> {
+				$into_range
+			}
+		}
 	};
 }
 
-standard_range!(std::ops::Range<T>);
-standard_range!(std::ops::RangeInclusive<T>);
-standard_range!(std::ops::RangeFrom<T>);
-standard_range!(std::ops::RangeTo<T>);
-standard_range!(std::ops::RangeToInclusive<T>);
-standard_range!(AnyRange<T>);
-standard_range!(RangeFromExcluded<T>);
-standard_range!(RangeFromExcludedTo<T>);
-standard_range!(RangeFromExcludedToIncluded<T>);
+standard_range!(std::ops::Range<T>, |self| AnyRange::new(
+	Bound::Included(self.start),
+	Bound::Excluded(self.end)
+));
+standard_range!(std::ops::RangeInclusive<T>, |self| {
+	let (a, b) = self.into_inner();
+	AnyRange::new(Bound::Included(a), Bound::Included(b))
+});
+standard_range!(std::ops::RangeFrom<T>, |self| AnyRange::new(
+	Bound::Included(self.start),
+	Bound::Unbounded
+));
+standard_range!(std::ops::RangeTo<T>, |self| AnyRange::new(
+	Bound::Unbounded,
+	Bound::Excluded(self.end)
+));
+standard_range!(std::ops::RangeToInclusive<T>, |self| AnyRange::new(
+	Bound::Unbounded,
+	Bound::Included(self.end)
+));
+standard_range!(AnyRange<T>, |self| self);
+standard_range!(RangeFromExcluded<T>, |self| AnyRange::new(
+	Bound::Excluded(self.start),
+	Bound::Unbounded
+));
+standard_range!(RangeFromExcludedTo<T>, |self| AnyRange::new(
+	Bound::Excluded(self.start),
+	Bound::Excluded(self.end)
+));
+standard_range!(RangeFromExcludedToIncluded<T>, |self| AnyRange::new(
+	Bound::Excluded(self.start),
+	Bound::Included(self.end)
+));
 
 #[inline(always)]
 fn is_range_empty<T, U>(start: Bound<&T>, end: Bound<&U>) -> bool
