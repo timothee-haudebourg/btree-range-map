@@ -83,6 +83,12 @@ where
 		K: PartialEnum + Measure,
 		T: RangePartialOrd<K>,
 	{
+		if connected {
+			if let Ok(addr) = self.address_of(key, false) {
+				return Ok(addr);
+			}
+		}
+
 		match self.btree.root_id() {
 			Some(id) => self.address_in(id, key, connected),
 			None => Err(Address::nowhere()),
@@ -894,6 +900,8 @@ where
 
 #[cfg(test)]
 mod tests {
+	use std::{collections::HashSet, ops::Bound};
+
 	use super::*;
 
 	macro_rules! items {
@@ -1036,6 +1044,17 @@ mod tests {
 	}
 
 	#[test]
+	fn update_singleton() {
+		let mut map: crate::RangeMap<char, usize> = crate::RangeMap::new();
+
+		map.insert('*', 0);
+		map.update('*', |_| Some(1));
+
+		assert_eq!(map.iter().count(), 1);
+		assert_eq!(map.get('*'), Some(&1))
+	}
+
+	#[test]
 	fn update_connected_before() {
 		let mut map: crate::RangeMap<char, usize> = crate::RangeMap::new();
 
@@ -1047,6 +1066,7 @@ mod tests {
 			Some(3)
 		});
 
+		assert_eq!(map.iter().count(), 4);
 		assert_eq!(*map.get('-').unwrap(), 3)
 	}
 
@@ -1057,6 +1077,154 @@ mod tests {
 		map.insert('e', 0);
 		map.update('a'..='z', |_| Some(1));
 
-		assert!(map.get('a').is_some())
+		assert_eq!(map.iter().count(), 1);
+		assert_eq!(map.get('a'), Some(&1))
+	}
+
+	#[test]
+	fn update_stress() {
+		let ranges = [
+			// 'A'..='Z',
+			// 'a'..='z',
+			// '0'..='9',
+			// '-'..='-',
+			// '.'..='.',
+			// '_'..='_',
+			// '~'..='~',
+			// '%'..='%',
+			// '!'..='!',
+			// '$'..='$',
+			// '&'..='&',
+			// '\''..='\'',
+			// '('..='(',
+			// ')'..=')',
+			// '*'..='*',
+			// '+'..='+',
+			','..=',',
+			';'..=';',
+			'='..='=',
+			':'..=':',
+			// '@'..='@',
+			// '['..='[',
+			// '0'..='9',
+			// '1'..='9',
+			// '1'..='1',
+			// '2'..='2',
+			// '2'..='2',
+			// 'A'..='Z',
+			// 'a'..='z',
+			// '0'..='9',
+			// '-'..='-',
+			// '.'..='.',
+			// '_'..='_',
+			// '~'..='~',
+			// '%'..='%',
+			// '!'..='!',
+			// '$'..='$',
+			// '&'..='&',
+			'\''..='\'',
+			'('..='(',
+			')'..=')',
+			'*'..='*',
+			'+'..='+',
+			// ','..=',',
+
+			// ';'..=';',
+			// '='..='=',
+			// ':'..=':',
+			// '/'..='/',
+			// '?'..='?',
+			// '#'..='#'
+		];
+
+		let mut map: crate::RangeMap<char, Vec<usize>> = crate::RangeMap::new();
+
+		for (i, range) in ranges.into_iter().enumerate() {
+			map.update(range, |current| {
+				let mut list = current.cloned().unwrap_or_default();
+				list.push(i);
+				Some(list)
+			});
+		}
+
+		eprintln!("before: {map:?}");
+
+		map.update(','..=',', |current| {
+			let mut list = current.cloned().unwrap_or_default();
+			list.push(9);
+			Some(list)
+		});
+
+		eprintln!("after: {map:?}");
+
+		let mut found_ranges = HashSet::new();
+		for (range, _) in map.iter() {
+			eprintln!("looking for range: {range:?}");
+			assert!(found_ranges.insert(range))
+		}
+	}
+
+	fn update_stress2() {
+		let mut map: crate::RangeMap<char, usize> = crate::RangeMap::new();
+
+		map.insert('+'..='+', 0);
+		map.insert(AnyRange::new(Bound::Excluded('+'), Bound::Included(',')), 1);
+		map.update(','..=',', |_| Some(2));
+
+		let mut found_ranges = HashSet::new();
+		for (range, _) in map.iter() {
+			eprintln!("looking for range: {range:?}");
+			assert!(found_ranges.insert(range))
+		}
+	}
+
+	#[test]
+	fn update_test() {
+		let mut map: crate::RangeMap<char, usize> = crate::RangeMap::new();
+
+		map.insert('0'..='9', 0);
+		map.insert(
+			AnyRange::new(Bound::Excluded('\''), Bound::Included('(')),
+			1,
+		);
+		map.insert(AnyRange::new(Bound::Excluded('('), Bound::Included(')')), 2);
+		map.insert(AnyRange::new(Bound::Excluded(')'), Bound::Included('*')), 3);
+		map.insert('+', 4);
+		map.insert(',', 5);
+		map.insert('-', 6);
+		map.insert('.', 7);
+		map.insert('/', 8);
+
+		assert_eq!(map.range_count(), 9);
+		assert_eq!(map.iter().count(), 9);
+
+		map.update(
+			AnyRange::new(Bound::Excluded('\''), Bound::Included('(')),
+			|_| Some(10),
+		);
+		map.update(
+			AnyRange::new(Bound::Excluded('('), Bound::Included(')')),
+			|_| Some(11),
+		);
+		map.update(
+			AnyRange::new(Bound::Excluded(')'), Bound::Included('*')),
+			|_| Some(12),
+		);
+
+		assert_eq!(map.range_count(), 9);
+		assert_eq!(map.iter().count(), 9);
+
+		// let mut ranges = map.iter();
+		// let (a, _) = ranges.next().unwrap();
+		// assert_eq!(a.first(), Some('('));
+		// assert_eq!(a.last(), Some(')'));
+
+		// let (b, _) = ranges.next().unwrap();
+		// assert_eq!(b.first(), Some('*'));
+		// assert_eq!(b.last(), Some('*'));
+
+		// let (c, _) = ranges.next().unwrap();
+		// assert_eq!(c.first(), Some('+'));
+		// assert_eq!(c.last(), Some('9'));
 	}
 }
