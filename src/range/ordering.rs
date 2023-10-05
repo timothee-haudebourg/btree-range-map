@@ -412,8 +412,8 @@ where
 			None => None,
 		},
 		(Bound::Excluded(v1), Bound::Unbounded) => {
-			if (!b2_start && U::min().map(|m| *v1 == m).unwrap_or(false))
-				|| (b2_start && U::max().map(|m| *v1 == m).unwrap_or(false))
+			if (!b2_start && U::max().map(|m| *v1 == m).unwrap_or(false))
+				|| (b2_start && U::min().map(|m| *v1 == m).unwrap_or(false))
 			{
 				Some(BoundOrdering::Excluded(true))
 			} else {

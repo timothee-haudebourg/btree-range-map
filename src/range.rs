@@ -356,6 +356,8 @@ where
 
 #[cfg(test)]
 mod tests {
+	use crate::RangeSet;
+
 	use super::*;
 	use std::cmp::Ordering;
 
@@ -396,6 +398,65 @@ mod tests {
 	}
 
 	#[test]
+	fn issue_2() {
+		let k = AnyRange {
+			start: Bound::Excluded(0u32),
+			end: Bound::Unbounded,
+		};
+		assert!(!k.is_empty());
+
+		let mut ids: RangeSet<u32> = RangeSet::new();
+		ids.insert(0u32);
+
+		let mut gaps = ids.gaps();
+		assert_eq!(
+			gaps.next().unwrap().cloned(),
+			AnyRange::new(Bound::Excluded(0), Bound::Unbounded)
+		);
+		assert_eq!(gaps.next().map(AnyRange::cloned), None);
+	}
+
+	#[test]
+	fn unsigned_integer_bound_partial_less() {
+		test_bound_cmp!(u32, [=0..] < [=1..]);
+		test_bound_cmp!(u32, [=0..] < [0..]);
+		test_bound_cmp!(u32, [=0..] < [..=1]);
+		test_bound_cmp!(u32, [=0..] < [..2]);
+		test_bound_cmp!(u32, [=0..] < [..~]);
+
+		test_bound_cmp!(u32, [0..] < [=2..]);
+		test_bound_cmp!(u32, [0..] < [1..]);
+		test_bound_cmp!(u32, [0..] < [..=2]);
+		test_bound_cmp!(u32, [0..] < [..3]);
+		test_bound_cmp!(u32, [0..] < [..~]);
+
+		test_bound_cmp!(u32, [~..] < [..=0]);
+		test_bound_cmp!(u32, [~..] < [..~]);
+
+		test_bound_cmp!(u32, [..=0] < [=1..]);
+		test_bound_cmp!(u32, [..=0] < [0..]);
+		test_bound_cmp!(u32, [..=0] < [..=1]);
+		test_bound_cmp!(u32, [..=0] < [..2]);
+		test_bound_cmp!(u32, [..=0] < [..~]);
+
+		test_bound_cmp!(u32, [..1] < [=1..]);
+		test_bound_cmp!(u32, [..1] < [0..]);
+		test_bound_cmp!(u32, [..1] < [..=1]);
+		test_bound_cmp!(u32, [..1] < [..2]);
+		test_bound_cmp!(u32, [..0] < [..~]);
+	}
+
+	#[test]
+	fn unsigned_integer_bound_partial_eq() {
+		test_bound_cmp!(u32, [~..] == [=0..]);
+	}
+
+	#[test]
+	fn unsigned_integer_bound_partial_greater() {
+		test_bound_cmp!(u32, [~..] > [..0]);
+	}
+
+	#[test]
 	fn integer_bound_partial_less() {
 		test_bound_cmp!(i32, [=0..] < [=1..]);
 		test_bound_cmp!(i32, [=0..] < [0..]);
@@ -408,6 +469,7 @@ mod tests {
 		test_bound_cmp!(i32, [0..] < [..=2]);
 		test_bound_cmp!(i32, [0..] < [..3]);
 		test_bound_cmp!(i32, [0..] < [..~]);
+		test_bound_cmp!(i32, [-2_147_483_648i32..] < [..~]);
 
 		test_bound_cmp!(i32, [~..] < [=0..]);
 		test_bound_cmp!(i32, [~..] < [..=0]);

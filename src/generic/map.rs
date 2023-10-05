@@ -1164,6 +1164,7 @@ mod tests {
 		}
 	}
 
+	#[test]
 	fn update_stress2() {
 		let mut map: crate::RangeMap<char, usize> = crate::RangeMap::new();
 
