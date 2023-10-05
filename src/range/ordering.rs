@@ -492,11 +492,11 @@ where
 		},
 		(Bound::Excluded(v1), Bound::Unbounded) => {
 			if (!b2_start
-				&& <T as MaybeBounded>::min()
+				&& <T as MaybeBounded>::max()
 					.map(|m| *v1 == m)
 					.unwrap_or(false))
 				|| (b2_start
-					&& <T as MaybeBounded>::max()
+					&& <T as MaybeBounded>::min()
 						.map(|m| *v1 == m)
 						.unwrap_or(false))
 			{
