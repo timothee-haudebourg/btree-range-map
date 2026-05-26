@@ -416,162 +416,54 @@ where
 		F: Fn(Option<&V>) -> Option<V>,
 		V: PartialEq + Clone,
 	{
-		let mut key = AnyRange::from(key);
+		let key = AnyRange::from(key);
 
 		if key.is_empty() {
 			return;
 		}
 
-		match self.address_of(&key, true) {
-			Ok(mut addr) => {
-				let mut next_addr = self.btree.next_item_address(addr);
+		// Snapshot every existing entry that intersects `key`, clamped to
+		// `key`, together with its current value. These clamped ranges are
+		// pairwise disjoint and ascending.
+		let mut existing: Vec<(AnyRange<K>, V)> = Vec::new();
+		for (range, value) in self.iter() {
+			if let Some(intersection) = key.product(range).cloned().intersection {
+				existing.push((intersection, value.clone()));
+			}
+		}
 
-				loop {
-					let (prev_addr, prev_next_addr) = {
-						let product = key.product(self.btree.item(addr).unwrap().key()).cloned();
-
-						let mut removed_item_value = None;
-
-						let (addr, next_addr) = match product.after {
-							Some(ProductArg::Subject(key_after)) => {
-								match f(None) {
-									Some(value) => {
-										let (new_addr, new_next_addr, removed_value) =
-											self.set_item(addr, next_addr, key_after, value);
-										removed_item_value = Some(removed_value);
-										(new_addr, new_next_addr)
-									}
-									None => (addr, next_addr), // we wait the last minute to remove the item.
-								}
-							}
-							Some(ProductArg::Object(item_after)) => {
-								let item = self.btree.item_mut(addr).unwrap();
-								item.set_key(item_after);
-								removed_item_value = Some(item.value().clone());
-								(addr, next_addr)
-							}
-							None => (addr, next_addr), // we wait the last minute to remove the item.
-						};
-
-						let (addr, next_addr) = match product.intersection {
-							Some(intersection) => {
-								let new_value = match removed_item_value.as_ref() {
-									Some(value) => f(Some(value)),
-									None => f(Some(self.btree.item(addr).unwrap().value())),
-								};
-
-								match new_value {
-									Some(new_value) => {
-										if removed_item_value.is_some() {
-											let (new_addr, new_next_addr) =
-												self.insert_item(addr, intersection, new_value);
-											(new_addr, new_next_addr)
-										} else {
-											let (new_addr, new_next_addr, removed_value) = self
-												.set_item(addr, next_addr, intersection, new_value);
-											removed_item_value = Some(removed_value);
-											(new_addr, new_next_addr)
-										}
-									}
-									None => (addr, next_addr), // we wait the last minute to remove the item.
-								}
-							}
-							None => (addr, next_addr), // we wait the last minute to remove the item.
-						};
-
-						match product.before {
-							Some(ProductArg::Subject(key_before)) => {
-								match self.btree.previous_item_address(addr) {
-									Some(prev_addr)
-										if self
-											.btree
-											.item(prev_addr)
-											.unwrap()
-											.key()
-											.connected_to(&key_before) =>
-									{
-										let (prev_addr, addr) = if removed_item_value.is_none() {
-											self.remove_item(addr)
-										} else {
-											(prev_addr, Some(addr))
-										};
-
-										// Let's go for another turn!
-										// One item back this time.
-										key = key_before;
-										(prev_addr, addr)
-									}
-									_ => {
-										// there is no previous connected item, we must insert here!
-										match f(None) {
-											Some(value) => {
-												if removed_item_value.is_some() {
-													// we cannot reuse the item
-													// insert
-													self.insert_item(addr, key_before, value);
-												} else {
-													// we can reuse the item
-													// reuse
-													self.set_item(
-														addr, next_addr, key_before, value,
-													);
-												}
-											}
-											None => {
-												if removed_item_value.is_none() {
-													self.btree.remove_at(addr); // finally remove the item.
-												}
-											}
-										}
-
-										break;
-									}
-								}
-							}
-							Some(ProductArg::Object(item_before)) => {
-								match removed_item_value {
-									Some(value) => {
-										self.insert_item(addr, item_before, value);
-									}
-									None => {
-										self.set_item_key(addr, next_addr, item_before);
-									}
-								}
-
-								break;
-							}
-							None => {
-								match self.btree.previous_item_address(addr) {
-									Some(prev_addr) => {
-										let (prev_addr, addr) = if removed_item_value.is_none() {
-											self.remove_item(addr)
-										} else {
-											(prev_addr, Some(addr))
-										};
-
-										self.merge_forward(prev_addr, addr)
-									}
-									_ => {
-										if removed_item_value.is_none() {
-											self.btree.remove_at(addr).unwrap();
-										}
-									}
-								}
-
-								break;
-							}
-						}
-					};
-
-					addr = prev_addr;
-					next_addr = prev_next_addr;
+		// Compute the gaps inside `key`: the parts covered by no existing
+		// entry, i.e. `key` minus the union of the clamped ranges.
+		let mut gaps: Vec<AnyRange<K>> = vec![key.clone()];
+		for (clamped, _) in &existing {
+			let mut next = Vec::with_capacity(gaps.len());
+			for gap in &gaps {
+				match gap.without(clamped) {
+					Difference::Empty => {}
+					Difference::Before(r, _) | Difference::After(r, _) => next.push(r.cloned()),
+					Difference::Split(l, r) => {
+						next.push(l.cloned());
+						next.push(r.cloned());
+					}
 				}
 			}
-			Err(addr) => {
-				// case (G)
-				if let Some(new_value) = f(None) {
-					self.btree.insert_at(addr, Item::new(key, new_value));
-				}
+			gaps = next;
+		}
+
+		// Apply `f` to every piece. The pieces — the gaps (current value
+		// `None`) and the clamped existing entries (current value `Some`) —
+		// are pairwise disjoint and exactly tile `key`, so each is written
+		// back independently over a non-fragmented region. This avoids the
+		// overlapping-update path that previously dropped contributions.
+		for gap in gaps {
+			if let Some(new_value) = f(None) {
+				self.insert(gap, new_value);
+			}
+		}
+		for (clamped, value) in existing {
+			match f(Some(&value)) {
+				Some(new_value) => self.insert(clamped, new_value),
+				None => self.remove(clamped),
 			}
 		}
 
@@ -1227,5 +1119,53 @@ mod tests {
 		// let (c, _) = ranges.next().unwrap();
 		// assert_eq!(c.first(), Some('+'));
 		// assert_eq!(c.last(), Some('9'));
+	}
+
+	/// Regression: `update` must honor its contract — for every sub-range of
+	/// the key it sets the value to `f(current_value_there)`, calling
+	/// `f(Some(&v))` wherever a value already exists. A monotonic closure that
+	/// only ever adds (clone existing + insert, always `Some`) therefore can
+	/// never lose data.
+	///
+	/// Previously failed: after fragmenting `[0-9]` with singletons `2,4,6,8`,
+	/// two broad `update('0'..='9', ...)` sweeps dropped earlier contributions
+	/// on the upper pieces and even left a bogus overlapping `6-9` entry.
+	#[test]
+	fn update_accumulate_over_fragmented_range() {
+		use std::collections::BTreeSet;
+
+		let mut map: crate::RangeMap<char, BTreeSet<u32>> = crate::RangeMap::new();
+		let add = |map: &mut crate::RangeMap<char, BTreeSet<u32>>, lo: char, hi: char, v: u32| {
+			map.update(AnyRange::from(lo..=hi), |cur: Option<&BTreeSet<u32>>| {
+				let mut s = cur.cloned().unwrap_or_default();
+				s.insert(v);
+				Some(s)
+			});
+		};
+
+		add(&mut map, '2', '2', 22);
+		add(&mut map, '4', '4', 24);
+		add(&mut map, '6', '6', 26);
+		add(&mut map, '8', '8', 28);
+		add(&mut map, '0', '9', 30);
+		add(&mut map, '0', '9', 31);
+
+		// Every digit's stored set == set of update-values whose range covered it.
+		for c in "0123456789".chars() {
+			let mut expected: BTreeSet<u32> = [30, 31].into_iter().collect();
+			for &(d, v) in &[('2', 22u32), ('4', 24), ('6', 26), ('8', 28)] {
+				if d == c {
+					expected.insert(v);
+				}
+			}
+			let got = map
+				.iter()
+				.find(|(r, _)| {
+					r.first().map_or(false, |f| f <= c) && r.last().map_or(false, |l| c <= l)
+				})
+				.map(|(_, v)| v.clone())
+				.unwrap_or_default();
+			assert_eq!(got, expected, "wrong accumulated set at char {c:?}");
+		}
 	}
 }
