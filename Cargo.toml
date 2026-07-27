@@ -2,7 +2,7 @@
 name = "btree-range-map"
 version = "0.7.2"
 authors = ["Timothée Haudebourg <author@haudebourg.net>"]
-edition = "2021"
+edition = "2024"
 
 categories = ["data-structures"]
 keywords = ["btree", "range", "map", "set"]
