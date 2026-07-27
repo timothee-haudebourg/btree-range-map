@@ -1,4 +1,4 @@
-use super::{direct_bound_partial_cmp, BoundOrd, BoundOrdering, BoundPartialOrd, Measure};
+use super::{BoundOrd, BoundOrdering, BoundPartialOrd, Measure, direct_bound_partial_cmp};
 use range_traits::PartialEnum;
 use std::{
 	cmp::Ordering,
@@ -21,7 +21,7 @@ impl AsBound for u8 {
 	}
 }
 
-impl<'a, T> AsBound for Bound<&'a T> {
+impl<T> AsBound for Bound<&T> {
 	type Item = T;
 
 	fn bound(&self) -> Bound<&T> {
@@ -79,7 +79,7 @@ impl<T> Directed<Bound<T>> {
 	}
 }
 
-impl<'a, T: Hash + PartialEnum> Hash for Directed<Bound<&'a T>> {
+impl<T: Hash + PartialEnum> Hash for Directed<Bound<&T>> {
 	fn hash<H: Hasher>(&self, h: &mut H) {
 		match self {
 			Directed::Start(b) => match b {

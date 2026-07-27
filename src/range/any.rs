@@ -1,6 +1,6 @@
 use super::{
-	direct_bound_cmp, direct_bound_partial_cmp, direct_bound_partial_eq, is_range_empty, max_bound,
-	min_bound, AsRange, Bound, BoundOrdering, Directed, Measure,
+	AsRange, Bound, BoundOrdering, Directed, Measure, direct_bound_cmp, direct_bound_partial_cmp,
+	direct_bound_partial_eq, is_range_empty, max_bound, min_bound,
 };
 use range_traits::{Bounded, MaybeBounded, PartialEnum};
 use std::{
@@ -194,7 +194,7 @@ impl<T: fmt::Debug> fmt::Debug for AnyRange<T> {
 	}
 }
 
-impl<'a, T> AnyRange<&'a T> {
+impl<T> AnyRange<&T> {
 	pub fn ref_is_empty(&self) -> bool
 	where
 		T: PartialEnum + Measure,

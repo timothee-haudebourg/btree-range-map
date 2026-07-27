@@ -1,4 +1,4 @@
-pub use btree_slab::generic::Node;
+pub use raw_btree::Node;
 
 pub mod map;
 pub mod multimap;

@@ -97,7 +97,7 @@ pub enum BoundOrdering {
 
 pub trait BoundPartialOrd<T = Self> {
 	fn bound_partial_cmp<B: AsBound<Item = T>>(&self, other: &Directed<B>)
-		-> Option<BoundOrdering>;
+	-> Option<BoundOrdering>;
 }
 
 impl<B: AsBound, U> BoundPartialOrd<U> for Directed<B>
@@ -267,11 +267,12 @@ where
 						&& v2
 							.pred()
 							.and_then(|pred| U::min().map(|m| pred == m))
-							.unwrap_or(false)) || (!start
-						&& v2
-							.succ()
-							.and_then(|succ| U::min().map(|m| succ == m))
-							.unwrap_or(false)),
+							.unwrap_or(false))
+						|| (!start
+							&& v2
+								.succ()
+								.and_then(|succ| U::min().map(|m| succ == m))
+								.unwrap_or(false)),
 				))
 			}
 		}
@@ -331,11 +332,12 @@ where
 						&& v2
 							.pred()
 							.map(|pred| <T as MaybeBounded>::min() == Some(pred))
-							.unwrap_or(false)) || (!start
-						&& v2
-							.succ()
-							.map(|succ| <T as MaybeBounded>::min() == Some(succ))
-							.unwrap_or(false)),
+							.unwrap_or(false))
+						|| (!start
+							&& v2
+								.succ()
+								.map(|succ| <T as MaybeBounded>::min() == Some(succ))
+								.unwrap_or(false)),
 				)
 			}
 		}
@@ -422,11 +424,12 @@ where
 						&& v1
 							.pred()
 							.map(|pred| U::min().map(|m| pred == m).unwrap_or(false))
-							.unwrap_or(false)) || (b2_start
-						&& v1
-							.succ()
-							.map(|succ| U::max().map(|m| succ == m).unwrap_or(false))
-							.unwrap_or(false)),
+							.unwrap_or(false))
+						|| (b2_start
+							&& v1
+								.succ()
+								.map(|succ| U::max().map(|m| succ == m).unwrap_or(false))
+								.unwrap_or(false)),
 				))
 			}
 		}
@@ -442,11 +445,12 @@ where
 						&& v2
 							.pred()
 							.map(|pred| U::min().map(|m| pred == m).unwrap_or(false))
-							.unwrap_or(false)) || (b2_start
-						&& v2
-							.succ()
-							.map(|succ| U::max().map(|m| succ == m).unwrap_or(false))
-							.unwrap_or(false)),
+							.unwrap_or(false))
+						|| (b2_start
+							&& v2
+								.succ()
+								.map(|succ| U::max().map(|m| succ == m).unwrap_or(false))
+								.unwrap_or(false)),
 				))
 			}
 		}
@@ -511,15 +515,16 @@ where
 									.map(|m| pred == m)
 									.unwrap_or(false)
 							})
-							.unwrap_or(false)) || (b2_start
-						&& v1
-							.succ()
-							.map(|succ| {
-								<T as MaybeBounded>::max()
-									.map(|m| succ == m)
-									.unwrap_or(false)
-							})
-							.unwrap_or(false)),
+							.unwrap_or(false))
+						|| (b2_start
+							&& v1
+								.succ()
+								.map(|succ| {
+									<T as MaybeBounded>::max()
+										.map(|m| succ == m)
+										.unwrap_or(false)
+								})
+								.unwrap_or(false)),
 				)
 			}
 		}
@@ -545,15 +550,16 @@ where
 									.map(|m| pred == m)
 									.unwrap_or(false)
 							})
-							.unwrap_or(false)) || (b2_start
-						&& v2
-							.succ()
-							.map(|succ| {
-								<T as MaybeBounded>::max()
-									.map(|m| succ == m)
-									.unwrap_or(false)
-							})
-							.unwrap_or(false)),
+							.unwrap_or(false))
+						|| (b2_start
+							&& v2
+								.succ()
+								.map(|succ| {
+									<T as MaybeBounded>::max()
+										.map(|m| succ == m)
+										.unwrap_or(false)
+								})
+								.unwrap_or(false)),
 				)
 			}
 		}

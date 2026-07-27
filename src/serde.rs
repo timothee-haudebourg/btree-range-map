@@ -1,15 +1,14 @@
 use std::marker::PhantomData;
 
-use btree_slab::generic::Node;
-use cc_traits::{SimpleCollectionMut, SimpleCollectionRef, Slab, SlabMut};
 use range_traits::{Measure, PartialEnum};
+use raw_btree::{Item, Storage};
 use serde::{
+	Deserialize, Serialize,
 	de::Error,
 	ser::{SerializeMap, SerializeSeq, SerializeTuple},
-	Deserialize, Serialize,
 };
 
-use crate::{generic, AnyRange};
+use crate::{AnyRange, generic};
 
 impl<T: Serialize> Serialize for AnyRange<T> {
 	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -55,9 +54,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for AnyRange<T> {
 	}
 }
 
-impl<T: Serialize, C: SimpleCollectionRef + Slab<Node<AnyRange<T>, ()>>> Serialize
-	for generic::RangeSet<T, C>
-{
+impl<T: Serialize, C: Storage<Item<AnyRange<T>, ()>>> Serialize for generic::RangeSet<T, C> {
 	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
 	where
 		S: serde::Serializer,
@@ -72,11 +69,8 @@ impl<T: Serialize, C: SimpleCollectionRef + Slab<Node<AnyRange<T>, ()>>> Seriali
 	}
 }
 
-impl<
-		'de,
-		T: Clone + PartialEnum + Measure + Deserialize<'de>,
-		C: Default + SimpleCollectionRef + SimpleCollectionMut + SlabMut<Node<AnyRange<T>, ()>>,
-	> Deserialize<'de> for generic::RangeSet<T, C>
+impl<'de, T: Clone + PartialEnum + Measure + Deserialize<'de>, C: Storage<Item<AnyRange<T>, ()>>>
+	Deserialize<'de> for generic::RangeSet<T, C>
 {
 	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
 	where
@@ -85,13 +79,10 @@ impl<
 		struct Visitor<T, C>(PhantomData<(T, C)>);
 
 		impl<
-				'de,
-				T: Clone + PartialEnum + Measure + Deserialize<'de>,
-				C: Default
-					+ SimpleCollectionRef
-					+ SimpleCollectionMut
-					+ SlabMut<Node<AnyRange<T>, ()>>,
-			> serde::de::Visitor<'de> for Visitor<T, C>
+			'de,
+			T: Clone + PartialEnum + Measure + Deserialize<'de>,
+			C: Storage<Item<AnyRange<T>, ()>>,
+		> serde::de::Visitor<'de> for Visitor<T, C>
 		{
 			type Value = generic::RangeSet<T, C>;
 
@@ -117,7 +108,7 @@ impl<
 	}
 }
 
-impl<K: Serialize, V: Serialize, C: SimpleCollectionRef + Slab<Node<AnyRange<K>, V>>> Serialize
+impl<K: Serialize, V: Serialize, C: Storage<Item<AnyRange<K>, V>>> Serialize
 	for generic::RangeMap<K, V, C>
 {
 	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -135,11 +126,11 @@ impl<K: Serialize, V: Serialize, C: SimpleCollectionRef + Slab<Node<AnyRange<K>,
 }
 
 impl<
-		'de,
-		K: PartialEnum + Measure + Deserialize<'de>,
-		V: Deserialize<'de>,
-		C: Default + SimpleCollectionRef + SimpleCollectionMut + SlabMut<Node<AnyRange<K>, V>>,
-	> Deserialize<'de> for generic::RangeMap<K, V, C>
+	'de,
+	K: PartialEnum + Measure + Deserialize<'de>,
+	V: Deserialize<'de>,
+	C: Storage<Item<AnyRange<K>, V>>,
+> Deserialize<'de> for generic::RangeMap<K, V, C>
 {
 	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
 	where
@@ -148,11 +139,11 @@ impl<
 		struct Visitor<K, V, C>(PhantomData<(K, V, C)>);
 
 		impl<
-				'de,
-				K: PartialEnum + Measure + Deserialize<'de>,
-				V: Deserialize<'de>,
-				C: Default + SimpleCollectionRef + SimpleCollectionMut + SlabMut<Node<AnyRange<K>, V>>,
-			> serde::de::Visitor<'de> for Visitor<K, V, C>
+			'de,
+			K: PartialEnum + Measure + Deserialize<'de>,
+			V: Deserialize<'de>,
+			C: Storage<Item<AnyRange<K>, V>>,
+		> serde::de::Visitor<'de> for Visitor<K, V, C>
 		{
 			type Value = generic::RangeMap<K, V, C>;
 

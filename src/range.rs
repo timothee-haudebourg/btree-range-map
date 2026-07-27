@@ -192,6 +192,7 @@ fn crop_right<'a, R: AsRange>(
 }
 
 /// Part of the result of a `product` operation.
+#[derive(Debug)]
 pub enum ProductArg<T> {
 	/// A part of the subject, `self`.
 	Subject(AnyRange<T>),
@@ -200,7 +201,7 @@ pub enum ProductArg<T> {
 	Object(AnyRange<T>),
 }
 
-impl<'a, T: Clone> ProductArg<&'a T> {
+impl<T: Clone> ProductArg<&T> {
 	pub fn cloned(&self) -> ProductArg<T> {
 		match self {
 			ProductArg::Subject(range) => ProductArg::Subject(range.cloned()),
@@ -210,6 +211,7 @@ impl<'a, T: Clone> ProductArg<&'a T> {
 }
 
 /// Result of a `product` operation.
+#[derive(Debug)]
 pub struct Product<T> {
 	/// What is left of `self` and `other` before their intersection.
 	pub before: Option<ProductArg<T>>,
@@ -221,7 +223,7 @@ pub struct Product<T> {
 	pub after: Option<ProductArg<T>>,
 }
 
-impl<'a, T: Clone> Product<&'a T> {
+impl<T: Clone> Product<&T> {
 	pub fn cloned(&self) -> Product<T> {
 		Product {
 			before: self.before.as_ref().map(|r| r.cloned()),

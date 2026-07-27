@@ -1,13 +1,13 @@
 use crate::{
-	generic::{
-		map::{IntoIter, Iter},
-		RangeMap,
-	},
 	AnyRange, AsRange,
+	generic::{
+		RangeMap,
+		map::{IntoIter, Iter},
+	},
 };
-use btree_slab::generic::Node;
-use cc_traits::{SetMut, SimpleCollectionMut, SimpleCollectionRef, Slab, SlabMut};
+use cc_traits::SetMut;
 use range_traits::{Measure, PartialEnum};
+use raw_btree::{Item, Storage};
 
 /// Multi map.
 ///
@@ -15,41 +15,40 @@ use range_traits::{Measure, PartialEnum};
 /// The type parameter `S` is the set type. It can be replaced by anything
 /// implementing the [`cc_traits::SetMut`] trait, such as the standard
 /// [`BTreeSet`](std::collections::BTreeSet) and [`HashSet`](std::collections::HashSet).
-#[derive(Clone)]
-pub struct RangeMultiMap<K, S, C> {
+pub struct RangeMultiMap<K, S, C: Storage<Item<AnyRange<K>, S>>> {
 	map: RangeMap<K, S, C>,
 }
 
-impl<K, S, C> RangeMultiMap<K, S, C> {
-	pub fn new() -> RangeMultiMap<K, S, C>
-	where
-		C: Default,
-	{
+impl<K: Clone, S: Clone, C: Storage<Item<AnyRange<K>, S>>> Clone for RangeMultiMap<K, S, C> {
+	fn clone(&self) -> Self {
+		RangeMultiMap {
+			map: self.map.clone(),
+		}
+	}
+}
+
+impl<K, S, C: Storage<Item<AnyRange<K>, S>>> RangeMultiMap<K, S, C> {
+	pub fn new() -> RangeMultiMap<K, S, C> {
 		RangeMultiMap {
 			map: RangeMap::new(),
 		}
 	}
 }
 
-impl<K, S, C: Default> Default for RangeMultiMap<K, S, C> {
+impl<K, S, C: Storage<Item<AnyRange<K>, S>>> Default for RangeMultiMap<K, S, C> {
 	fn default() -> Self {
 		Self::new()
 	}
 }
 
-impl<K, S, C: Slab<Node<AnyRange<K>, S>>> RangeMultiMap<K, S, C>
-where
-	C: SimpleCollectionRef,
-{
-	pub fn iter(&self) -> Iter<K, S, C> {
+impl<K, S, C: Storage<Item<AnyRange<K>, S>>> RangeMultiMap<K, S, C> {
+	pub fn iter(&self) -> Iter<'_, K, S, C> {
 		self.map.iter()
 	}
 }
 
-impl<'a, K: Clone + PartialOrd + Measure, S, C: Slab<Node<AnyRange<K>, S>>> IntoIterator
+impl<'a, K: Clone + PartialOrd + Measure, S, C: Storage<Item<AnyRange<K>, S>>> IntoIterator
 	for &'a RangeMultiMap<K, S, C>
-where
-	C: SimpleCollectionRef,
 {
 	type Item = (&'a AnyRange<K>, &'a S);
 	type IntoIter = Iter<'a, K, S, C>;
@@ -59,11 +58,7 @@ where
 	}
 }
 
-impl<K, S, C: SlabMut<Node<AnyRange<K>, S>>> RangeMultiMap<K, S, C>
-where
-	C: SimpleCollectionRef,
-	C: SimpleCollectionMut,
-{
+impl<K, S, C: Storage<Item<AnyRange<K>, S>>> RangeMultiMap<K, S, C> {
 	pub fn insert<R: AsRange<Item = K>, V>(&mut self, key: R, value: V)
 	where
 		K: Clone + PartialEnum + Measure,
@@ -102,11 +97,8 @@ where
 	}
 }
 
-impl<K: Clone + PartialOrd + Measure, S, C: SlabMut<Node<AnyRange<K>, S>>> IntoIterator
+impl<K: Clone + PartialOrd + Measure, S, C: Storage<Item<AnyRange<K>, S>>> IntoIterator
 	for RangeMultiMap<K, S, C>
-where
-	C: SimpleCollectionRef,
-	C: SimpleCollectionMut,
 {
 	type Item = (AnyRange<K>, S);
 	type IntoIter = IntoIter<K, S, C>;

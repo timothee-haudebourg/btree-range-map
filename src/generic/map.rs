@@ -1,14 +1,10 @@
 use super::Node;
 use crate::{
-	range::{Difference, ProductArg},
 	AnyRange, AsRange, IntoRange, RangeOrdering, RangePartialOrd,
+	range::{Difference, ProductArg},
 };
-use btree_slab::generic::{
-	map::{BTreeExt, BTreeExtMut, BTreeMap},
-	node::{Address, Item, Offset},
-};
-use cc_traits::{SimpleCollectionMut, SimpleCollectionRef, Slab, SlabMut};
 use range_traits::{Bounded, Measure, PartialEnum};
+use raw_btree::{Address, Item, RawBTree, Storage, node::Offset};
 use std::{
 	cmp::{Ord, Ordering, PartialOrd},
 	fmt,
@@ -16,33 +12,39 @@ use std::{
 };
 
 /// Range map.
-#[derive(Clone)]
-pub struct RangeMap<K, V, C> {
-	btree: BTreeMap<AnyRange<K>, V, C>,
+pub struct RangeMap<K, V, C: Storage<Item<AnyRange<K>, V>>> {
+	btree: RawBTree<Item<AnyRange<K>, V>, C>,
 }
 
-impl<K, V, C> RangeMap<K, V, C> {
-	/// Create a new empty map.
-	pub fn new() -> RangeMap<K, V, C>
-	where
-		C: Default,
-	{
+impl<K: Clone, V: Clone, C: Storage<Item<AnyRange<K>, V>>> Clone for RangeMap<K, V, C> {
+	fn clone(&self) -> Self {
 		RangeMap {
-			btree: BTreeMap::new(),
+			btree: self.btree.clone(),
 		}
 	}
 }
 
-impl<K, T, C: Default> Default for RangeMap<K, T, C> {
+impl<K, V, C: Storage<Item<AnyRange<K>, V>>> RangeMap<K, V, C> {
+	/// Create a new empty map.
+	pub fn new() -> RangeMap<K, V, C> {
+		RangeMap {
+			btree: RawBTree::new(),
+		}
+	}
+}
+
+impl<K, V, C: Storage<Item<AnyRange<K>, V>>> Default for RangeMap<K, V, C> {
 	fn default() -> Self {
 		Self::new()
 	}
 }
 
-impl<K, V, C: Slab<Node<AnyRange<K>, V>>> RangeMap<K, V, C>
-where
-	C: SimpleCollectionRef,
-{
+pub struct CandidateOffset<N> {
+	pub offset: Result<Offset, Offset>,
+	pub node: Option<N>,
+}
+
+impl<K, V, C: Storage<Item<AnyRange<K>, V>>> RangeMap<K, V, C> {
 	pub fn len(&self) -> K::Len
 	where
 		K: Measure + PartialEnum + Bounded,
@@ -78,66 +80,103 @@ where
 		self.btree.len()
 	}
 
-	fn address_of<T>(&self, key: &T, connected: bool) -> Result<Address, Address>
+	fn address_of<T>(
+		&self,
+		key: &T,
+		connected: bool,
+	) -> Result<Address<C::Node>, Option<Address<C::Node>>>
 	where
 		K: PartialEnum + Measure,
 		T: RangePartialOrd<K>,
 	{
-		if connected {
-			if let Ok(addr) = self.address_of(key, false) {
-				return Ok(addr);
-			}
+		if connected && let Ok(addr) = self.address_of(key, false) {
+			return Ok(addr);
 		}
 
-		match self.btree.root_id() {
-			Some(id) => self.address_in(id, key, connected),
-			None => Err(Address::nowhere()),
+		match self.btree.root() {
+			Some(id) => self.address_in(id, key, connected).map_err(Some),
+			None => Err(None),
 		}
 	}
 
-	fn address_in<T>(&self, mut id: usize, key: &T, connected: bool) -> Result<Address, Address>
+	fn address_in<T>(
+		&self,
+		mut id: C::Node,
+		key: &T,
+		connected: bool,
+	) -> Result<Address<C::Node>, Address<C::Node>>
 	where
 		K: PartialEnum + Measure,
 		T: RangePartialOrd<K>,
 	{
+		let mut candidate = None;
+
 		loop {
 			match self.offset_in(id, key, connected) {
-				Ok(offset) => return Ok(Address::new(id, offset)),
-				Err((offset, None)) => return Err(Address::new(id, offset.into())),
-				Err((_, Some(child_id))) => {
+				CandidateOffset {
+					offset: Ok(offset),
+					node: None,
+				} => {
+					// Found the best match!
+					return Ok(Address::new(id, offset));
+				}
+				CandidateOffset {
+					offset: Ok(offset),
+					node: Some(child_id),
+				} => {
+					// Found a candidate, but a better one may be deeper in the tree.
+					candidate = Some(Address::new(id, offset));
 					id = child_id;
+				}
+				CandidateOffset {
+					offset: Err(_),
+					node: Some(child_id),
+				} => {
+					// No candidate here, but one may be deeper in the tree.
+					id = child_id;
+				}
+				CandidateOffset {
+					offset: Err(offset),
+					node: None,
+				} => {
+					// We won't find any more candidates.
+					return candidate.ok_or(Address::new(id, offset));
 				}
 			}
 		}
 	}
 
-	fn offset_in<T>(
-		&self,
-		id: usize,
-		key: &T,
-		connected: bool,
-	) -> Result<Offset, (usize, Option<usize>)>
+	fn offset_in<T>(&self, id: C::Node, key: &T, connected: bool) -> CandidateOffset<C::Node>
 	where
 		K: PartialEnum + Measure,
 		T: RangePartialOrd<K>,
 	{
-		match self.btree.node(id) {
+		match unsafe { self.btree.node(id) } {
 			Node::Internal(node) => {
 				let branches = node.branches();
 				match binary_search(branches, key, connected) {
 					Some(i) => {
 						let b = &branches[i];
 						if key
-							.range_partial_cmp(b.item.key())
+							.range_partial_cmp(&b.item.key)
 							.unwrap_or(RangeOrdering::After(false))
 							.matches(connected)
 						{
-							Ok(i.into())
+							CandidateOffset {
+								offset: Ok(i.into()),
+								node: Some(b.child),
+							}
 						} else {
-							Err((i + 1, Some(b.child)))
+							CandidateOffset {
+								offset: Err(i.into()),
+								node: Some(b.child),
+							}
 						}
 					}
-					None => Err((0, Some(node.first_child_id()))),
+					None => CandidateOffset {
+						offset: Err(0.into()),
+						node: Some(node.first_child_id()),
+					},
 				}
 			}
 			Node::Leaf(leaf) => {
@@ -146,15 +185,24 @@ where
 					Some(i) => {
 						let item = &items[i];
 						let ord = key
-							.range_partial_cmp(item.key())
+							.range_partial_cmp(&item.key)
 							.unwrap_or(RangeOrdering::After(false));
 						if ord.matches(connected) {
-							Ok(i.into())
+							CandidateOffset {
+								offset: Ok(i.into()),
+								node: None,
+							}
 						} else {
-							Err((i + 1, None))
+							CandidateOffset {
+								offset: Err((i + 1).into()),
+								node: None,
+							}
 						}
 					}
-					None => Err((0, None)),
+					None => CandidateOffset {
+						offset: Err(0.into()),
+						node: None,
+					},
 				}
 			}
 		}
@@ -186,28 +234,29 @@ where
 		K: PartialEnum + RangePartialOrd + Measure,
 	{
 		match self.address_of(&key, false) {
-			Ok(addr) => Some(self.btree.item(addr).unwrap().value()),
+			Ok(addr) => Some(&unsafe { self.btree.get_at(addr) }.unwrap().value),
 			Err(_) => None,
 		}
 	}
 
-	pub fn iter(&self) -> Iter<K, V, C> {
-		self.btree.iter()
+	pub fn iter(&self) -> Iter<'_, K, V, C> {
+		Iter {
+			inner: self.btree.iter(),
+		}
 	}
 
 	/// Returns an iterator over the gaps (unbounded keys) of the map.
-	pub fn gaps(&self) -> Gaps<K, V, C> {
+	pub fn gaps(&self) -> Gaps<'_, K, V, C> {
 		Gaps {
-			inner: self.btree.iter(),
+			inner: self.iter(),
 			prev: None,
 			done: false,
 		}
 	}
 }
 
-impl<K: fmt::Debug, V: fmt::Debug, C: Slab<Node<AnyRange<K>, V>>> fmt::Debug for RangeMap<K, V, C>
-where
-	C: SimpleCollectionRef,
+impl<K: fmt::Debug, V: fmt::Debug, C: Storage<Item<AnyRange<K>, V>>> fmt::Debug
+	for RangeMap<K, V, C>
 {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		write!(f, "{{")?;
@@ -220,58 +269,51 @@ where
 	}
 }
 
-impl<K, L, V, W, C: Slab<Node<AnyRange<K>, V>>, D: Slab<Node<AnyRange<L>, W>>>
-	PartialEq<RangeMap<L, W, D>> for RangeMap<K, V, C>
+impl<K, V, C, D> PartialEq<RangeMap<K, V, D>> for RangeMap<K, V, C>
 where
-	L: Measure<K> + PartialOrd<K> + PartialEnum,
-	K: PartialEnum,
-	W: PartialEq<V>,
-	C: SimpleCollectionRef,
-	D: SimpleCollectionRef,
+	K: Measure + PartialOrd + PartialEnum,
+	V: PartialEq,
+	C: Storage<Item<AnyRange<K>, V>>,
+	D: Storage<Item<AnyRange<K>, V>>,
 {
-	fn eq(&self, other: &RangeMap<L, W, D>) -> bool {
-		self.btree == other.btree
+	fn eq(&self, other: &RangeMap<K, V, D>) -> bool {
+		self.iter().eq(other.iter())
 	}
 }
 
-impl<K, V, C: Slab<Node<AnyRange<K>, V>>> Eq for RangeMap<K, V, C>
+impl<K, V, C: Storage<Item<AnyRange<K>, V>>> Eq for RangeMap<K, V, C>
 where
 	K: Measure + PartialEnum + Ord,
 	V: Eq,
-	C: SimpleCollectionRef,
 {
 }
 
-impl<K, L, V, W, C: Slab<Node<AnyRange<K>, V>>, D: Slab<Node<AnyRange<L>, W>>>
-	PartialOrd<RangeMap<L, W, D>> for RangeMap<K, V, C>
+impl<K, V, C, D> PartialOrd<RangeMap<K, V, D>> for RangeMap<K, V, C>
 where
-	L: Measure<K> + PartialOrd<K> + PartialEnum,
-	K: PartialEnum,
-	W: PartialOrd<V>,
-	C: SimpleCollectionRef,
-	D: SimpleCollectionRef,
+	K: Measure + PartialOrd + PartialEnum,
+	V: PartialOrd,
+	C: Storage<Item<AnyRange<K>, V>>,
+	D: Storage<Item<AnyRange<K>, V>>,
 {
-	fn partial_cmp(&self, other: &RangeMap<L, W, D>) -> Option<Ordering> {
-		self.btree.partial_cmp(&other.btree)
+	fn partial_cmp(&self, other: &RangeMap<K, V, D>) -> Option<Ordering> {
+		self.iter().partial_cmp(other.iter())
 	}
 }
 
-impl<K, V, C: Slab<Node<AnyRange<K>, V>>> Ord for RangeMap<K, V, C>
+impl<K, V, C: Storage<Item<AnyRange<K>, V>>> Ord for RangeMap<K, V, C>
 where
 	K: Measure + PartialEnum + Ord,
 	V: Ord,
-	C: SimpleCollectionRef,
 {
 	fn cmp(&self, other: &Self) -> Ordering {
-		self.btree.cmp(&other.btree)
+		self.iter().cmp(other.iter())
 	}
 }
 
-impl<K, V, C: Slab<Node<AnyRange<K>, V>>> Hash for RangeMap<K, V, C>
+impl<K, V, C: Storage<Item<AnyRange<K>, V>>> Hash for RangeMap<K, V, C>
 where
 	K: Hash + PartialEnum,
 	V: Hash,
-	C: SimpleCollectionRef,
 {
 	fn hash<H: Hasher>(&self, h: &mut H) {
 		for range in self {
@@ -280,10 +322,7 @@ where
 	}
 }
 
-impl<'a, K, V, C: Slab<Node<AnyRange<K>, V>>> IntoIterator for &'a RangeMap<K, V, C>
-where
-	C: SimpleCollectionRef,
-{
+impl<'a, K, V, C: Storage<Item<AnyRange<K>, V>>> IntoIterator for &'a RangeMap<K, V, C> {
 	type Item = (&'a AnyRange<K>, &'a V);
 	type IntoIter = Iter<'a, K, V, C>;
 
@@ -292,122 +331,163 @@ where
 	}
 }
 
-impl<K, V, C: SlabMut<Node<AnyRange<K>, V>>> RangeMap<K, V, C>
-where
-	C: SimpleCollectionRef,
-	C: SimpleCollectionMut,
-{
-	fn merge_forward(&mut self, addr: Address, next_addr: Option<Address>)
+impl<K, V, C: Storage<Item<AnyRange<K>, V>>> RangeMap<K, V, C> {
+	fn merge_forward(&mut self, addr: Address<C::Node>, next_addr: Option<Address<C::Node>>)
 	where
 		K: Clone + PartialEnum + Measure,
 		V: PartialEq,
 	{
 		if let Some(next_addr) = next_addr {
-			let item = self.btree.item(addr).unwrap();
-			let next_item = self.btree.item(next_addr).unwrap();
-			if item.key().connected_to(next_item.key()) && item.value() == next_item.value() {
-				let (removed_item, non_normalized_new_addr) = self.btree.remove_at(addr).unwrap();
-				let new_addr = self.btree.normalize(non_normalized_new_addr).unwrap();
-				let item = self.btree.item_mut(new_addr).unwrap();
-				item.key_mut().add(removed_item.key());
+			// SAFETY: `addr` is a valid address in this tree.
+			let item = unsafe { self.btree.get_at(addr) }.unwrap();
+			// SAFETY: `next_addr` is a valid address in this tree.
+			let next_item = unsafe { self.btree.get_at(next_addr) }.unwrap();
+			if item.key.connected_to(&next_item.key) && item.value == next_item.value {
+				// SAFETY: `addr` is a valid address in this tree.
+				let (removed_item, non_normalized_new_addr) =
+					unsafe { self.btree.remove_at(addr) }.unwrap();
+				let new_addr = non_normalized_new_addr
+					.and_then(|a| {
+						// SAFETY: `a` was just returned by `remove_at` as a valid address.
+						unsafe { self.btree.normalize(a) }
+					})
+					.unwrap();
+				// SAFETY: `new_addr` was just returned by `normalize` as a valid address.
+				let item = unsafe { self.btree.get_mut_at(new_addr) }.unwrap();
+				item.key.add(&removed_item.key);
 			}
 		}
 	}
 
 	fn set_item_key(
 		&mut self,
-		addr: Address,
-		next_addr: Option<Address>,
+		addr: Address<C::Node>,
+		next_addr: Option<Address<C::Node>>,
 		new_key: AnyRange<K>,
-	) -> (Address, Option<Address>)
+	) -> (Address<C::Node>, Option<Address<C::Node>>)
 	where
 		K: Clone + PartialEnum + Measure,
 		V: PartialEq,
 	{
 		if let Some(next_addr) = next_addr {
-			let next_item = self.btree.item(next_addr).unwrap();
-			if new_key.connected_to(next_item.key())
-				&& next_item.value() == self.btree.item(addr).unwrap().value()
-			{
+			// SAFETY: `next_addr` is a valid address in this tree.
+			let next_item = unsafe { self.btree.get_at(next_addr) }.unwrap();
+			// SAFETY: `addr` is a valid address in this tree.
+			let addr_value = &unsafe { self.btree.get_at(addr) }.unwrap().value;
+			if new_key.connected_to(&next_item.key) && next_item.value == *addr_value {
 				// Merge with the next item.
-				let (_, non_normalized_new_addr) = self.btree.remove_at(addr).unwrap();
-				let new_addr = self.btree.normalize(non_normalized_new_addr).unwrap();
-				let item = self.btree.item_mut(new_addr).unwrap();
-				item.key_mut().add(&new_key);
+				// SAFETY: `addr` is a valid address in this tree.
+				let (_, non_normalized_new_addr) = unsafe { self.btree.remove_at(addr) }.unwrap();
+				let new_addr = non_normalized_new_addr
+					.and_then(|a| {
+						// SAFETY: `a` was just returned by `remove_at` as a valid address.
+						unsafe { self.btree.normalize(a) }
+					})
+					.unwrap();
+				// SAFETY: `new_addr` was just returned by `normalize` as a valid address.
+				let item = unsafe { self.btree.get_mut_at(new_addr) }.unwrap();
+				item.key.add(&new_key);
 
-				return (new_addr, self.btree.next_item_address(new_addr));
+				// SAFETY: `new_addr` was just returned by `normalize` as a valid address.
+				let next_addr = unsafe { self.btree.next_item_address(new_addr) };
+				return (new_addr, next_addr);
 			}
 		}
 
-		let item = self.btree.item_mut(addr).unwrap();
-		*item.key_mut() = new_key;
+		// SAFETY: `addr` is a valid address in this tree.
+		let item = unsafe { self.btree.get_mut_at(addr) }.unwrap();
+		item.key = new_key;
 		(addr, next_addr)
 	}
 
 	fn set_item(
 		&mut self,
-		addr: Address,
-		next_addr: Option<Address>,
+		addr: Address<C::Node>,
+		next_addr: Option<Address<C::Node>>,
 		new_key: AnyRange<K>,
 		new_value: V,
-	) -> (Address, Option<Address>, V)
+	) -> SetItem<C::Node, V>
 	where
 		K: Clone + PartialEnum + Measure,
 		V: PartialEq,
 	{
 		if let Some(next_addr) = next_addr {
-			let next_item = self.btree.item(next_addr).unwrap();
-			if new_key.connected_to(next_item.key()) && *next_item.value() == new_value {
+			// SAFETY: `next_addr` is a valid address in this tree.
+			let next_item = unsafe { self.btree.get_at(next_addr) }.unwrap();
+			if new_key.connected_to(&next_item.key) && next_item.value == new_value {
 				// Merge with the next item.
-				let (removed_item, non_normalized_new_addr) = self.btree.remove_at(addr).unwrap();
-				let new_addr = self.btree.normalize(non_normalized_new_addr).unwrap();
-				let item = self.btree.item_mut(new_addr).unwrap();
-				item.key_mut().add(&new_key);
+				// SAFETY: `addr` is a valid address in this tree.
+				let (removed_item, non_normalized_new_addr) =
+					unsafe { self.btree.remove_at(addr) }.unwrap();
+				let new_addr = non_normalized_new_addr
+					.and_then(|a| {
+						// SAFETY: `a` was just returned by `remove_at` as a valid address.
+						unsafe { self.btree.normalize(a) }
+					})
+					.unwrap();
+				// SAFETY: `new_addr` was just returned by `normalize` as a valid address.
+				let item = unsafe { self.btree.get_mut_at(new_addr) }.unwrap();
+				item.key.add(&new_key);
 
-				return (
-					new_addr,
-					self.btree.next_item_address(new_addr),
-					removed_item.into_value(),
-				);
+				// SAFETY: `new_addr` was just returned by `normalize` as a valid address.
+				let after_addr = unsafe { self.btree.next_item_address(new_addr) };
+				return SetItem::new(new_addr, after_addr, removed_item.value);
 			}
 		}
 
-		let item = self.btree.item_mut(addr).unwrap();
-		let removed_value = item.set_value(new_value);
-		*item.key_mut() = new_key;
-		(addr, next_addr, removed_value)
+		// SAFETY: `addr` is a valid address in this tree.
+		let item = unsafe { self.btree.get_mut_at(addr) }.unwrap();
+		let removed_value = std::mem::replace(&mut item.value, new_value);
+		item.key = new_key;
+		SetItem::new(addr, next_addr, removed_value)
 	}
 
 	fn insert_item(
 		&mut self,
-		addr: Address,
+		addr: Address<C::Node>,
 		key: AnyRange<K>,
 		value: V,
-	) -> (Address, Option<Address>)
+	) -> (Address<C::Node>, Option<Address<C::Node>>)
 	where
 		K: Clone + PartialEnum + Measure,
 		V: PartialEq,
 	{
-		let next_item = self.btree.item(addr).unwrap();
-		if key.connected_to(next_item.key()) && *next_item.value() == value {
+		// SAFETY: `addr` is a valid address in this tree.
+		let next_item = unsafe { self.btree.get_at(addr) }.unwrap();
+		if key.connected_to(&next_item.key) && next_item.value == value {
 			// Merge with the next item.
-			let item = self.btree.item_mut(addr).unwrap();
-			item.key_mut().add(&key);
+			// SAFETY: `addr` is a valid address in this tree.
+			let item = unsafe { self.btree.get_mut_at(addr) }.unwrap();
+			item.key.add(&key);
 
-			return (addr, self.btree.next_item_address(addr));
+			// SAFETY: `addr` is a valid address in this tree.
+			let next_addr = unsafe { self.btree.next_item_address(addr) };
+			return (addr, next_addr);
 		}
 
-		let new_addr = self.btree.insert_at(addr, Item::new(key, value));
-		(new_addr, self.btree.next_item_address(new_addr))
+		// SAFETY: `addr` is a valid address in this tree (`Some` is always
+		// returned by `insert_at` when inserting, since insertion can only
+		// overflow a node, never leave the tree empty).
+		let new_addr = unsafe { self.btree.insert_at(Some(addr), Item::new(key, value)) }.unwrap();
+		// SAFETY: `new_addr` was just returned by `insert_at` as a valid address.
+		let next_addr = unsafe { self.btree.next_item_address(new_addr) };
+		(new_addr, next_addr)
 	}
 
-	fn remove_item(&mut self, addr: Address) -> (Address, Option<Address>) {
-		let (_, non_normalized_addr) = self.btree.remove_at(addr).unwrap();
-		let new_addr = self
-			.btree
-			.previous_item_address(non_normalized_addr)
-			.unwrap();
-		(new_addr, self.btree.normalize(non_normalized_addr))
+	fn remove_item(
+		&mut self,
+		addr: Address<C::Node>,
+	) -> (Address<C::Node>, Option<Address<C::Node>>) {
+		// SAFETY: `addr` is a valid address in this tree.
+		let (_, non_normalized_addr) = unsafe { self.btree.remove_at(addr) }.unwrap();
+		let non_normalized_addr = non_normalized_addr.expect("range map unexpectedly became empty");
+		// SAFETY: `non_normalized_addr` was just returned by `remove_at` as a
+		// valid address.
+		let new_addr = unsafe { self.btree.previous_item_address(non_normalized_addr) }.unwrap();
+		// SAFETY: `non_normalized_addr` was just returned by `remove_at` as a
+		// valid address.
+		let normalized_addr = unsafe { self.btree.normalize(non_normalized_addr) };
+		(new_addr, normalized_addr)
 	}
 
 	pub fn update<R: AsRange<Item = K>, F>(&mut self, key: R, f: F)
@@ -424,11 +504,14 @@ where
 
 		match self.address_of(&key, true) {
 			Ok(mut addr) => {
-				let mut next_addr = self.btree.next_item_address(addr);
+				// SAFETY: `addr` is a valid address in this tree.
+				let mut next_addr = unsafe { self.btree.next_item_address(addr) };
 
 				loop {
 					let (prev_addr, prev_next_addr) = {
-						let product = key.product(self.btree.item(addr).unwrap().key()).cloned();
+						// SAFETY: `addr` is a valid address in this tree.
+						let addr_key = &unsafe { self.btree.get_at(addr) }.unwrap().key;
+						let product = key.product(addr_key).cloned();
 
 						let mut removed_item_value = None;
 
@@ -436,8 +519,11 @@ where
 							Some(ProductArg::Subject(key_after)) => {
 								match f(None) {
 									Some(value) => {
-										let (new_addr, new_next_addr, removed_value) =
-											self.set_item(addr, next_addr, key_after, value);
+										let SetItem {
+											new_addr,
+											new_next_addr,
+											removed_value,
+										} = self.set_item(addr, next_addr, key_after, value);
 										removed_item_value = Some(removed_value);
 										(new_addr, new_next_addr)
 									}
@@ -445,9 +531,10 @@ where
 								}
 							}
 							Some(ProductArg::Object(item_after)) => {
-								let item = self.btree.item_mut(addr).unwrap();
-								item.set_key(item_after);
-								removed_item_value = Some(item.value().clone());
+								// SAFETY: `addr` is a valid address in this tree.
+								let item = unsafe { self.btree.get_mut_at(addr) }.unwrap();
+								item.key = item_after;
+								removed_item_value = Some(item.value.clone());
 								(addr, next_addr)
 							}
 							None => (addr, next_addr), // we wait the last minute to remove the item.
@@ -457,7 +544,12 @@ where
 							Some(intersection) => {
 								let new_value = match removed_item_value.as_ref() {
 									Some(value) => f(Some(value)),
-									None => f(Some(self.btree.item(addr).unwrap().value())),
+									None => {
+										// SAFETY: `addr` is a valid address in this tree.
+										let value =
+											&unsafe { self.btree.get_at(addr) }.unwrap().value;
+										f(Some(value))
+									}
 								};
 
 								match new_value {
@@ -467,8 +559,16 @@ where
 												self.insert_item(addr, intersection, new_value);
 											(new_addr, new_next_addr)
 										} else {
-											let (new_addr, new_next_addr, removed_value) = self
-												.set_item(addr, next_addr, intersection, new_value);
+											let SetItem {
+												new_addr,
+												new_next_addr,
+												removed_value,
+											} = self.set_item(
+												addr,
+												next_addr,
+												intersection,
+												new_value,
+											);
 											removed_item_value = Some(removed_value);
 											(new_addr, new_next_addr)
 										}
@@ -481,15 +581,21 @@ where
 
 						match product.before {
 							Some(ProductArg::Subject(key_before)) => {
-								match self.btree.previous_item_address(addr) {
-									Some(prev_addr)
-										if self
-											.btree
-											.item(prev_addr)
+								// SAFETY: `addr` is a valid address in this tree. The
+								// closure is only ever called with `prev_addr` values
+								// returned by `previous_item_address` itself.
+								let prev = unsafe { self.btree.previous_item_address(addr) }
+									.filter(|&prev_addr| {
+										// SAFETY: `prev_addr` was just returned by
+										// `previous_item_address` as a valid address.
+										unsafe { self.btree.get_at(prev_addr) }
 											.unwrap()
-											.key()
-											.connected_to(&key_before) =>
-									{
+											.key
+											.connected_to(&key_before)
+									});
+
+								match prev {
+									Some(prev_addr) => {
 										let (prev_addr, addr) = if removed_item_value.is_none() {
 											self.remove_item(addr)
 										} else {
@@ -501,7 +607,7 @@ where
 										key = key_before;
 										(prev_addr, addr)
 									}
-									_ => {
+									None => {
 										// there is no previous connected item, we must insert here!
 										match f(None) {
 											Some(value) => {
@@ -519,7 +625,9 @@ where
 											}
 											None => {
 												if removed_item_value.is_none() {
-													self.btree.remove_at(addr); // finally remove the item.
+													// finally remove the item.
+													// SAFETY: `addr` is a valid address in this tree.
+													unsafe { self.btree.remove_at(addr) };
 												}
 											}
 										}
@@ -541,7 +649,8 @@ where
 								break;
 							}
 							None => {
-								match self.btree.previous_item_address(addr) {
+								// SAFETY: `addr` is a valid address in this tree.
+								match unsafe { self.btree.previous_item_address(addr) } {
 									Some(prev_addr) => {
 										let (prev_addr, addr) = if removed_item_value.is_none() {
 											self.remove_item(addr)
@@ -553,7 +662,8 @@ where
 									}
 									_ => {
 										if removed_item_value.is_none() {
-											self.btree.remove_at(addr).unwrap();
+											// SAFETY: `addr` is a valid address in this tree.
+											unsafe { self.btree.remove_at(addr) }.unwrap();
 										}
 									}
 								}
@@ -570,7 +680,9 @@ where
 			Err(addr) => {
 				// case (G)
 				if let Some(new_value) = f(None) {
-					self.btree.insert_at(addr, Item::new(key, new_value));
+					// SAFETY: `addr` is `None` only if the tree is empty, which
+					// `insert_at` handles.
+					unsafe { self.btree.insert_at(addr, Item::new(key, new_value)) };
 				}
 			}
 		}
@@ -592,7 +704,9 @@ where
 		match self.address_of(&key, true) {
 			Ok(_) => Err((key, value)),
 			Err(addr) => {
-				self.btree.insert_at(addr, Item::new(key, value));
+				unsafe {
+					self.btree.insert_at(addr, Item::new(key, value));
+				}
 				Ok(())
 			}
 		}
@@ -613,18 +727,22 @@ where
 		match self.address_of(&key, true) {
 			Ok(mut addr) => {
 				// let mut value = Some(value);
-				let mut next_addr = self.btree.next_item_address(addr);
+				// SAFETY: `addr` is a valid address in this tree.
+				let mut next_addr = unsafe { self.btree.next_item_address(addr) };
 
 				loop {
 					let (prev_addr, prev_next_addr) = {
-						let product = key.product(self.btree.item(addr).unwrap().key()).cloned();
+						// SAFETY: `addr` is a valid address in this tree.
+						let addr_key = &unsafe { self.btree.get_at(addr) }.unwrap().key;
+						let product = key.product(addr_key).cloned();
 
 						let mut removed_item_value = None;
 
 						if let Some(ProductArg::Object(item_after)) = product.after {
-							let item = self.btree.item_mut(addr).unwrap();
-							item.set_key(item_after);
-							removed_item_value = Some(item.value().clone());
+							// SAFETY: `addr` is a valid address in this tree.
+							let item = unsafe { self.btree.get_mut_at(addr) }.unwrap();
+							item.key = item_after;
+							removed_item_value = Some(item.value.clone());
 						}
 
 						match product.before {
@@ -640,12 +758,16 @@ where
 										}
 									}
 									None => {
-										if *self.btree.item(addr).unwrap().value() == value {
+										// SAFETY: `addr` is a valid address in this tree.
+										let addr_value =
+											&unsafe { self.btree.get_at(addr) }.unwrap().value;
+										if *addr_value == value {
 											key.add(&item_before);
 											self.set_item_key(addr, next_addr, key);
 										} else {
-											let (_, _, old_value) =
-												self.set_item(addr, next_addr, key, value);
+											let old_value = self
+												.set_item(addr, next_addr, key, value)
+												.removed_value;
 											self.insert_item(addr, item_before, old_value);
 										}
 									}
@@ -654,15 +776,21 @@ where
 								break;
 							}
 							Some(ProductArg::Subject(_)) | None => {
-								match self.btree.previous_item_address(addr) {
-									Some(prev_addr)
-										if self
-											.btree
-											.item(prev_addr)
+								// SAFETY: `addr` is a valid address in this tree. The
+								// closure is only ever called with `prev_addr` values
+								// returned by `previous_item_address` itself.
+								let prev = unsafe { self.btree.previous_item_address(addr) }
+									.filter(|&prev_addr| {
+										// SAFETY: `prev_addr` was just returned by
+										// `previous_item_address` as a valid address.
+										unsafe { self.btree.get_at(prev_addr) }
 											.unwrap()
-											.key()
-											.connected_to(&key) =>
-									{
+											.key
+											.connected_to(&key)
+									});
+
+								match prev {
+									Some(prev_addr) => {
 										// We can move one to the previous item.
 										let (prev_addr, addr) = if removed_item_value.is_none() {
 											self.remove_item(addr)
@@ -672,7 +800,7 @@ where
 
 										(prev_addr, addr)
 									}
-									_ => {
+									None => {
 										// There is no previous item, we must get it done now.
 										if removed_item_value.is_some() {
 											self.insert_item(addr, key, value);
@@ -693,7 +821,9 @@ where
 			}
 			Err(addr) => {
 				// case (G)
-				self.btree.insert_at(addr, Item::new(key, value));
+				// SAFETY: `addr` is `None` only if the tree is empty, which
+				// `insert_at` handles.
+				unsafe { self.btree.insert_at(addr, Item::new(key, value)) };
 			}
 		}
 	}
@@ -707,43 +837,60 @@ where
 		let key = AnyRange::from(key);
 		if let Ok(mut addr) = self.address_of(&key, false) {
 			loop {
-				if self
-					.btree
-					.item(addr)
-					.map(|item| item.key().intersects(&key))
-					.unwrap_or(false)
-				{
-					match self.btree.item(addr).unwrap().key().without(&key) {
+				// SAFETY: `addr` is a valid address in this tree.
+				let intersects = unsafe { self.btree.get_at(addr) }
+					.map(|item| item.key.intersects(&key))
+					.unwrap_or(false);
+
+				if intersects {
+					// SAFETY: `addr` is a valid address in this tree.
+					let difference = unsafe { self.btree.get_at(addr) }
+						.unwrap()
+						.key
+						.without(&key);
+					match difference {
 						Difference::Split(left, right) => {
 							let left = left.cloned();
 							let right = right.cloned();
 
 							let right_value = {
-								let item = self.btree.item_mut(addr).unwrap();
-								*item.key_mut() = right;
-								item.value().clone()
+								// SAFETY: `addr` is a valid address in this tree.
+								let item = unsafe { self.btree.get_mut_at(addr) }.unwrap();
+								item.key = right;
+								item.value.clone()
 							};
-							self.btree.insert_at(addr, Item::new(left, right_value));
+							// SAFETY: `addr` is a valid address in this tree.
+							unsafe {
+								self.btree
+									.insert_at(Some(addr), Item::new(left, right_value))
+							};
 							break; // no need to go further, the removed range was totaly included in this one.
 						}
 						Difference::Before(left, _) => {
 							let left = left.cloned();
-							let item = self.btree.item_mut(addr).unwrap();
-							*item.key_mut() = left;
+							// SAFETY: `addr` is a valid address in this tree.
+							let item = unsafe { self.btree.get_mut_at(addr) }.unwrap();
+							item.key = left;
 							break; // no need to go further, the removed range does not intersect anything below this range.
 						}
 						Difference::After(right, _) => {
 							let right = right.cloned();
-							let item = self.btree.item_mut(addr).unwrap();
-							*item.key_mut() = right;
+							// SAFETY: `addr` is a valid address in this tree.
+							let item = unsafe { self.btree.get_mut_at(addr) }.unwrap();
+							item.key = right;
 						}
 						Difference::Empty => {
-							let (_, next_addr) = self.btree.remove_at(addr).unwrap();
-							addr = next_addr
+							// SAFETY: `addr` is a valid address in this tree.
+							let (_, next_addr) = unsafe { self.btree.remove_at(addr) }.unwrap();
+							match next_addr {
+								Some(next_addr) => addr = next_addr,
+								None => break,
+							}
 						}
 					}
 
-					match self.btree.previous_item_address(addr) {
+					// SAFETY: `addr` is a valid address in this tree.
+					match unsafe { self.btree.previous_item_address(addr) } {
 						Some(prev_addr) => addr = prev_addr,
 						None => break,
 					}
@@ -755,32 +902,104 @@ where
 	}
 }
 
-impl<K, V, C: SlabMut<Node<AnyRange<K>, V>>> IntoIterator for RangeMap<K, V, C>
-where
-	C: SimpleCollectionRef,
-	C: SimpleCollectionMut,
-{
+struct SetItem<N, V> {
+	new_addr: Address<N>,
+	new_next_addr: Option<Address<N>>,
+	removed_value: V,
+}
+
+impl<N, V> SetItem<N, V> {
+	fn new(new_addr: Address<N>, new_next_addr: Option<Address<N>>, removed_value: V) -> Self {
+		SetItem {
+			new_addr,
+			new_next_addr,
+			removed_value,
+		}
+	}
+}
+
+impl<N, V> From<SetItem<N, V>> for (Address<N>, Option<Address<N>>, V) {
+	fn from(item: SetItem<N, V>) -> Self {
+		(item.new_addr, item.new_next_addr, item.removed_value)
+	}
+}
+
+impl<K, V, C: Storage<Item<AnyRange<K>, V>>> IntoIterator for RangeMap<K, V, C> {
 	type Item = (AnyRange<K>, V);
 	type IntoIter = IntoIter<K, V, C>;
 
 	fn into_iter(self) -> Self::IntoIter {
-		self.btree.into_iter()
+		IntoIter {
+			inner: self.btree.into_iter(),
+		}
 	}
 }
 
-pub type Iter<'a, K, V, C> = btree_slab::generic::map::Iter<'a, AnyRange<K>, V, C>;
-pub type IntoIter<K, V, C> = btree_slab::generic::map::IntoIter<AnyRange<K>, V, C>;
+/// Iterator over the entries of a `RangeMap`.
+pub struct Iter<'a, K, V, C: Storage<Item<AnyRange<K>, V>>> {
+	inner: raw_btree::Iter<'a, Item<AnyRange<K>, V>, C>,
+}
+
+impl<'a, K, V, C: Storage<Item<AnyRange<K>, V>>> Iterator for Iter<'a, K, V, C> {
+	type Item = (&'a AnyRange<K>, &'a V);
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.inner.next().map(Item::as_pair)
+	}
+
+	fn size_hint(&self) -> (usize, Option<usize>) {
+		self.inner.size_hint()
+	}
+}
+
+impl<'a, K, V, C: Storage<Item<AnyRange<K>, V>>> DoubleEndedIterator for Iter<'a, K, V, C> {
+	fn next_back(&mut self) -> Option<Self::Item> {
+		self.inner.next_back().map(Item::as_pair)
+	}
+}
+
+impl<'a, K, V, C: Storage<Item<AnyRange<K>, V>>> ExactSizeIterator for Iter<'a, K, V, C> {}
+
+impl<'a, K, V, C: Storage<Item<AnyRange<K>, V>>> Clone for Iter<'a, K, V, C> {
+	fn clone(&self) -> Self {
+		Iter { inner: self.inner }
+	}
+}
+
+/// Consuming iterator over the entries of a `RangeMap`.
+pub struct IntoIter<K, V, C: Storage<Item<AnyRange<K>, V>>> {
+	inner: raw_btree::IntoIter<Item<AnyRange<K>, V>, C>,
+}
+
+impl<K, V, C: Storage<Item<AnyRange<K>, V>>> Iterator for IntoIter<K, V, C> {
+	type Item = (AnyRange<K>, V);
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.inner.next().map(Item::into_pair)
+	}
+
+	fn size_hint(&self) -> (usize, Option<usize>) {
+		self.inner.size_hint()
+	}
+}
+
+impl<K, V, C: Storage<Item<AnyRange<K>, V>>> DoubleEndedIterator for IntoIter<K, V, C> {
+	fn next_back(&mut self) -> Option<Self::Item> {
+		self.inner.next_back().map(Item::into_pair)
+	}
+}
+
+impl<K, V, C: Storage<Item<AnyRange<K>, V>>> ExactSizeIterator for IntoIter<K, V, C> {}
 
 /// Iterator over the gaps (unbound keys) of a `RangeMap`.
-pub struct Gaps<'a, K, V, C> {
+pub struct Gaps<'a, K, V, C: Storage<Item<AnyRange<K>, V>>> {
 	inner: Iter<'a, K, V, C>,
 	prev: Option<std::ops::Bound<&'a K>>,
 	done: bool,
 }
 
-impl<'a, K: Measure + PartialEnum, V, C: Slab<Node<AnyRange<K>, V>>> Iterator for Gaps<'a, K, V, C>
-where
-	C: SimpleCollectionRef,
+impl<'a, K: Measure + PartialEnum, V, C: Storage<Item<AnyRange<K>, V>>> Iterator
+	for Gaps<'a, K, V, C>
 {
 	type Item = AnyRange<&'a K>;
 
@@ -835,7 +1054,7 @@ where
 								break Some(AnyRange {
 									start: Bound::Unbounded,
 									end: Bound::Unbounded,
-								})
+								});
 							}
 						}
 					}
@@ -845,9 +1064,9 @@ where
 	}
 }
 
-/// Search for the index of the gratest item less/below or equal/including the given element.
+/// Search for the index of the greatest item less/below or equal/including the given element.
 ///
-/// If `connected` is `true`, then it will search for the gratest item less/below or equal/including **or connected to** the given element.
+/// If `connected` is `true`, then it will search for the greatest item less/below or equal/including **or connected to** the given element.
 pub fn binary_search<T: Measure + PartialEnum, U, V, I: AsRef<Item<AnyRange<T>, V>>>(
 	items: &[I],
 	element: &U,
@@ -858,7 +1077,7 @@ where
 {
 	if items.is_empty()
 		|| element
-			.range_partial_cmp(items[0].as_ref().key())
+			.range_partial_cmp(&items[0].as_ref().key)
 			.unwrap_or(RangeOrdering::Before(false))
 			.is_before(connected)
 	{
@@ -868,7 +1087,7 @@ where
 		let mut j = items.len() - 1;
 
 		if !element
-			.range_partial_cmp(items[j].as_ref().key())
+			.range_partial_cmp(&items[j].as_ref().key)
 			.unwrap_or(RangeOrdering::After(false))
 			.is_before(connected)
 		{
@@ -883,7 +1102,7 @@ where
 		while j - i > 1 {
 			let k = (i + j) / 2;
 
-			if let Some(ord) = element.range_partial_cmp(items[k].as_ref().key()) {
+			if let Some(ord) = element.range_partial_cmp(&items[k].as_ref().key) {
 				if ord.is_before(connected) {
 					j = k;
 				} else {
@@ -1227,5 +1446,128 @@ mod tests {
 		// let (c, _) = ranges.next().unwrap();
 		// assert_eq!(c.first(), Some('+'));
 		// assert_eq!(c.last(), Some('9'));
+	}
+
+	/// Reproduces an overlapping-ranges bug found by folding a single wide
+	/// range (`'0'..='9'`) into a map that already has several separate
+	/// single-character entries (`'1'..='1'`, `'2'..='2'`, ..., `'9'..='9'`),
+	/// each mapped to a *distinct* value, via repeated calls to `update`.
+	/// `update` merges values on overlap. The resulting map must always be a
+	/// proper partition of the key space: no two entries may overlap.
+	#[test]
+	fn update_digit_fanout() {
+		use std::collections::BTreeSet;
+
+		let mut map: crate::RangeMap<char, BTreeSet<i32>> = crate::RangeMap::new();
+
+		// Simulate the `DIGIT` rule: one wide range, single target `0`.
+		map.update('0'..='9', |current: Option<&BTreeSet<i32>>| {
+			let mut set = current.cloned().unwrap_or_default();
+			set.insert(0);
+			Some(set)
+		});
+
+		// Simulate the `NZDIGIT` rule's fan-out: one single-char range per
+		// literal, each with a *distinct* target id (as would arise from
+		// Thompson's construction of an alternation of literals).
+		for (i, c) in ('1'..='9').enumerate() {
+			let id = 100 + i as i32;
+			map.update(c..=c, move |current: Option<&BTreeSet<i32>>| {
+				let mut set = current.cloned().unwrap_or_default();
+				set.insert(id);
+				Some(set)
+			});
+		}
+
+		for (range, set) in map.iter() {
+			eprintln!("{range:?} -> {set:?}");
+		}
+
+		let entries: Vec<_> = map.iter().collect();
+		for i in 0..entries.len() {
+			for j in (i + 1)..entries.len() {
+				assert!(
+					!entries[i].0.intersects(entries[j].0),
+					"overlapping ranges: {:?} and {:?}",
+					entries[i].0,
+					entries[j].0
+				);
+			}
+		}
+
+		// Every digit must be covered by exactly the union of `{0}` and
+		// whichever `NZDIGIT` literal (if any) matches it.
+		for c in '0'..='9' {
+			let set = map.get(c).unwrap_or_else(|| panic!("no entry for {c:?}"));
+			assert!(
+				set.contains(&0),
+				"digit {c:?} should always contain 0, got {set:?}"
+			);
+		}
+	}
+
+	/// Same scenario as [`update_digit_fanout`], but with the single-character
+	/// updates applied *before* the wide range update.
+	///
+	/// This used to reproduce a bug in `RangeMap`'s `address_in`/`offset_in`
+	/// binary search: once *9* (but not fewer - see the loop below)
+	/// pre-existing, adjacent, distinctly-valued single-item ranges existed
+	/// in the map, the tree grew an internal node (the Knuth order is
+	/// `M = 8`), and `address_of` would stop as soon as it found a match on
+	/// an *internal separator* item instead of also checking that
+	/// separator's right subtree for an even further-right match. Folding a
+	/// wider range on top of all 9 items via `update` would then only walk
+	/// backward from that separator, silently skipping every item to its
+	/// right (`'6'..='6'`, `'7'..='7'`, `'8'..='8'`, `'9'..='9'`), leaving
+	/// them orphaned while a bogus `'5'..='9'` entry appeared over them.
+	fn digit_fanout_reversed_with_count(n: u32) {
+		use std::collections::BTreeSet;
+
+		let mut map: crate::RangeMap<char, BTreeSet<i32>> = crate::RangeMap::new();
+
+		let digits: Vec<char> = ('1'..='9').take(n as usize).collect();
+
+		for (i, &c) in digits.iter().enumerate() {
+			let id = 100 + i as i32;
+			map.update(c..=c, move |current: Option<&BTreeSet<i32>>| {
+				let mut set = current.cloned().unwrap_or_default();
+				set.insert(id);
+				Some(set)
+			});
+		}
+
+		let last = *digits.last().unwrap();
+		map.update('0'..=last, |current: Option<&BTreeSet<i32>>| {
+			let mut set = current.cloned().unwrap_or_default();
+			set.insert(0);
+			Some(set)
+		});
+
+		println!("-- n = {n} --");
+		for (range, set) in map.iter() {
+			println!("{range:?} -> {set:?}");
+		}
+
+		let entries: Vec<_> = map.iter().collect();
+		for i in 0..entries.len() {
+			for j in (i + 1)..entries.len() {
+				assert!(
+					!entries[i].0.intersects(entries[j].0),
+					"n={n}: overlapping ranges: {:?} and {:?}",
+					entries[i].0,
+					entries[j].0
+				);
+			}
+		}
+	}
+
+	/// Regression test for the overlapping-ranges bug that motivated the
+	/// switch from `btree-slab` to `raw-btree`: see
+	/// [`digit_fanout_reversed_with_count`]. This now passes at every `n`.
+	#[test]
+	fn update_digit_fanout_reversed() {
+		for n in 1..=9 {
+			digit_fanout_reversed_with_count(n);
+		}
 	}
 }

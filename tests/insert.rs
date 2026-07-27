@@ -3,9 +3,9 @@ use btree_range_map::{RangeMap, RangeSet};
 #[test]
 fn insert_single() {
 	let mut range_map: RangeMap<i32, bool> = RangeMap::new();
-	range_map.insert(00..05, true);
+	range_map.insert(0..5, true);
 	assert_eq!(range_map.range_count(), 1);
-	assert_eq!(range_map.get(02), Some(&true));
+	assert_eq!(range_map.get(2), Some(&true));
 }
 
 /// Testing case (G) only.
@@ -13,7 +13,7 @@ fn insert_single() {
 fn insert_exclusive_ranges() {
 	let mut range_map: RangeMap<i32, bool> = RangeMap::new();
 
-	range_map.insert(00..05, true);
+	range_map.insert(0..5, true);
 	range_map.insert(10..15, false);
 	range_map.insert(20..25, true);
 	range_map.insert(30..35, false);
@@ -25,8 +25,8 @@ fn insert_exclusive_ranges() {
 	range_map.insert(90..95, false);
 
 	assert_eq!(range_map.range_count(), 10);
-	assert_eq!(range_map.get(02), Some(&true));
-	assert_eq!(range_map.get(07), None);
+	assert_eq!(range_map.get(2), Some(&true));
+	assert_eq!(range_map.get(7), None);
 	assert_eq!(range_map.get(12), Some(&false));
 	assert_eq!(range_map.get(17), None);
 	assert_eq!(range_map.get(22), Some(&true));
@@ -51,13 +51,13 @@ fn insert_exclusive_ranges() {
 fn insert_inclusive_ranges_a() {
 	let mut range_map: RangeMap<i32, bool> = RangeMap::new();
 
-	range_map.insert(00..20, true); // case (G)
-	range_map.insert(05..15, false); // case (A)
+	range_map.insert(0..20, true); // case (G)
+	range_map.insert(5..15, false); // case (A)
 
 	assert_eq!(range_map.range_count(), 3);
-	assert_eq!(range_map.get(00), Some(&true));
-	assert_eq!(range_map.get(04), Some(&true));
-	assert_eq!(range_map.get(05), Some(&false));
+	assert_eq!(range_map.get(0), Some(&true));
+	assert_eq!(range_map.get(4), Some(&true));
+	assert_eq!(range_map.get(5), Some(&false));
 	assert_eq!(range_map.get(14), Some(&false));
 	assert_eq!(range_map.get(19), Some(&true));
 	assert_eq!(range_map.get(20), None);
@@ -67,12 +67,12 @@ fn insert_inclusive_ranges_a() {
 fn insert_inclusive_ranges_b() {
 	let mut range_map: RangeMap<i32, bool> = RangeMap::new();
 
-	range_map.insert(00..20, true); // case (G)
+	range_map.insert(0..20, true); // case (G)
 	range_map.insert(10..30, false); // case (B)
 
 	assert_eq!(range_map.range_count(), 2);
-	assert_eq!(range_map.get(00), Some(&true));
-	assert_eq!(range_map.get(09), Some(&true));
+	assert_eq!(range_map.get(0), Some(&true));
+	assert_eq!(range_map.get(9), Some(&true));
 	assert_eq!(range_map.get(10), Some(&false));
 	assert_eq!(range_map.get(19), Some(&false));
 	assert_eq!(range_map.get(29), Some(&false));
@@ -84,11 +84,11 @@ fn insert_inclusive_ranges_ce() {
 	let mut range_map: RangeMap<i32, bool> = RangeMap::new();
 
 	range_map.insert(10..30, true); // case (G)
-	range_map.insert(00..20, false); // cases (C) and (E)
+	range_map.insert(0..20, false); // cases (C) and (E)
 
 	assert_eq!(range_map.range_count(), 2);
-	assert_eq!(range_map.get(00), Some(&false));
-	assert_eq!(range_map.get(09), Some(&false));
+	assert_eq!(range_map.get(0), Some(&false));
+	assert_eq!(range_map.get(9), Some(&false));
 	assert_eq!(range_map.get(10), Some(&false));
 	assert_eq!(range_map.get(19), Some(&false));
 	assert_eq!(range_map.get(20), Some(&true));
@@ -140,7 +140,7 @@ fn insert_inclusive_ranges_cf() {
 fn insert_merge_ranges() {
 	let mut range_map: RangeMap<i32, bool> = RangeMap::new();
 
-	range_map.insert(00..10, true);
+	range_map.insert(0..10, true);
 	range_map.insert(10..20, true);
 
 	assert_eq!(range_map.range_count(), 1);
@@ -153,7 +153,7 @@ fn insert_merge_ranges() {
 fn insert_merge_ranges2() {
 	let mut range_map: RangeMap<i32, bool> = RangeMap::new();
 
-	range_map.insert(00..10, true);
+	range_map.insert(0..10, true);
 	range_map.insert(10..20, false);
 	range_map.insert(10..15, true);
 
@@ -171,7 +171,7 @@ fn insert_merge_ranges2() {
 fn update_merge_ranges() {
 	let mut range_map: RangeMap<i32, bool> = RangeMap::new();
 
-	range_map.insert(00..10, true);
+	range_map.insert(0..10, true);
 	range_map.update(10..20, |_| Some(true));
 
 	assert_eq!(range_map.range_count(), 1);
@@ -203,7 +203,7 @@ fn insert_merge_ranges_rev() {
 	let mut range_map: RangeMap<i32, bool> = RangeMap::new();
 
 	range_map.insert(10..20, true);
-	range_map.insert(00..10, true);
+	range_map.insert(0..10, true);
 
 	assert_eq!(range_map.range_count(), 1);
 	assert_eq!(range_map.get(0), Some(&true));

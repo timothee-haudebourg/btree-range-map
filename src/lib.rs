@@ -3,7 +3,7 @@
 //! items in a map or set, a range map (or range set) should be used.
 //!
 //! This library provides a range map implementation based on
-//! [`btree-slab`](https://crates.io/crates/btree-slab)'s B-tree.
+//! [`raw-btree`](https://crates.io/crates/raw-btree)'s B-tree.
 //! It defines three basic types `RangeSet<T>`, `RangeMap<K, V>` and
 //! `RangeMultiMap<K, S>`.
 //!
@@ -90,9 +90,9 @@ mod serde;
 
 pub use range::*;
 
-pub type DefaultSetContainer<K> = slab::Slab<generic::Node<AnyRange<K>, ()>>;
-pub type DefaultMapContainer<K, V> = slab::Slab<generic::Node<AnyRange<K>, V>>;
+pub type DefaultSetContainer = raw_btree::storage::BoxStorage;
+pub type DefaultMapContainer = raw_btree::storage::BoxStorage;
 
-pub type RangeSet<K> = generic::RangeSet<K, DefaultSetContainer<K>>;
-pub type RangeMap<K, V> = generic::RangeMap<K, V, DefaultMapContainer<K, V>>;
-pub type RangeMultiMap<K, S> = generic::RangeMultiMap<K, S, DefaultMapContainer<K, S>>;
+pub type RangeSet<K> = generic::RangeSet<K, DefaultSetContainer>;
+pub type RangeMap<K, V> = generic::RangeMap<K, V, DefaultMapContainer>;
+pub type RangeMultiMap<K, S> = generic::RangeMultiMap<K, S, DefaultMapContainer>;
