@@ -10,7 +10,7 @@ efficient storage. Every time you need to store a large number numeric-keyed
 items in a map or set, a range map (or range set) should be used.
 
 This library provides a range map implementation based on
-[`btree-slab`](https://crates.io/crates/btree-slab)'s B-tree.
+[`raw-btree`](https://crates.io/crates/raw-btree)'s B-tree.
 It defines three basic types `RangeSet<T>`, `RangeMap<K, V>` and
 `RangeMultiMap<K, S>`.
 
