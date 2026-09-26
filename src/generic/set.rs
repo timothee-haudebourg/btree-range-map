@@ -69,6 +69,10 @@ impl<T, C: Storage<Item<AnyRange<T>, ()>>> RangeSet<T, C> {
 		self.map.intersects(values)
 	}
 
+	/// # Complexity
+	///
+	/// `O(log n)`, where `n` is [`Self::range_count`]. Delegates to
+	/// [`RangeMap::contains_key`].
 	pub fn contains(&self, value: T) -> bool
 	where
 		T: Clone + PartialEnum + RangePartialOrd + Measure,
@@ -110,6 +114,11 @@ impl<'a, T, C: Storage<Item<AnyRange<T>, ()>>> IntoIterator for &'a RangeSet<T, 
 }
 
 impl<T, C: Storage<Item<AnyRange<T>, ()>>> RangeSet<T, C> {
+	/// # Complexity
+	///
+	/// `O((k + 1) log n)`, where `n` is [`Self::range_count`] and `k` is the
+	/// number of existing ranges that overlap, or are connected to, `key`.
+	/// Delegates to [`RangeMap::insert`].
 	pub fn insert<R: IntoRange<Item = T>>(&mut self, key: R)
 	where
 		T: Clone + PartialEnum + Measure,
@@ -117,6 +126,11 @@ impl<T, C: Storage<Item<AnyRange<T>, ()>>> RangeSet<T, C> {
 		self.map.insert(key, ())
 	}
 
+	/// # Complexity
+	///
+	/// `O((k + 1) log n)`, where `n` is [`Self::range_count`] and `k` is the
+	/// number of existing ranges that intersect `key`. Delegates to
+	/// [`RangeMap::remove`].
 	pub fn remove<R: AsRange<Item = T>>(&mut self, key: R)
 	where
 		T: Clone + PartialEnum + Measure,

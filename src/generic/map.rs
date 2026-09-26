@@ -208,6 +208,11 @@ impl<K, V, C: Storage<Item<AnyRange<K>, V>>> RangeMap<K, V, C> {
 		}
 	}
 
+	/// # Complexity
+	///
+	/// `O(log n)`, where `n` is the number of ranges in the map
+	/// ([`Self::range_count`]). A single top-down search through the B-tree
+	/// locates the (at most one) range intersecting `key`.
 	pub fn intersects<R: AsRange<Item = K>>(&self, key: R) -> bool
 	where
 		K: PartialEnum + Measure,
@@ -222,6 +227,10 @@ impl<K, V, C: Storage<Item<AnyRange<K>, V>>> RangeMap<K, V, C> {
 		}
 	}
 
+	/// # Complexity
+	///
+	/// `O(log n)`, where `n` is the number of ranges in the map
+	/// ([`Self::range_count`]). Same single-search cost as [`Self::get`].
 	pub fn contains_key(&self, key: K) -> bool
 	where
 		K: PartialEnum + RangePartialOrd + Measure,
@@ -229,6 +238,11 @@ impl<K, V, C: Storage<Item<AnyRange<K>, V>>> RangeMap<K, V, C> {
 		self.address_of(&key, false).is_ok()
 	}
 
+	/// # Complexity
+	///
+	/// `O(log n)`, where `n` is the number of ranges in the map
+	/// ([`Self::range_count`]). A single top-down binary search through the
+	/// B-tree locates the range containing `key`.
 	pub fn get(&self, key: K) -> Option<&V>
 	where
 		K: PartialEnum + RangePartialOrd + Measure,
@@ -490,6 +504,18 @@ impl<K, V, C: Storage<Item<AnyRange<K>, V>>> RangeMap<K, V, C> {
 		(new_addr, normalized_addr)
 	}
 
+	/// # Complexity
+	///
+	/// `O((k + 1) log n)`, where `n` is the number of ranges in the map
+	/// ([`Self::range_count`]) and `k` is the number of existing ranges that
+	/// overlap, or are connected to, `key`. Each of the `k` affected ranges is
+	/// merged, split or removed with one `O(log n)` B-tree operation, on top
+	/// of the initial `O(log n)` lookup. This is `O(log n)` when `key` only
+	/// touches a handful of existing ranges (the common case), and `O(n log
+	/// n)` in the worst case (`key` overlaps or connects to every stored
+	/// range). This primitive underlies
+	/// [`RangeMultiMap::insert`](crate::generic::RangeMultiMap::insert) and
+	/// [`RangeMultiMap::remove`](crate::generic::RangeMultiMap::remove).
 	pub fn update<R: AsRange<Item = K>, F>(&mut self, key: R, f: F)
 	where
 		K: Clone + PartialEnum + Measure,
@@ -713,6 +739,15 @@ impl<K, V, C: Storage<Item<AnyRange<K>, V>>> RangeMap<K, V, C> {
 	}
 
 	/// Insert a new key-value binding.
+	///
+	/// # Complexity
+	///
+	/// `O((k + 1) log n)`, where `n` is the number of ranges in the map
+	/// ([`Self::range_count`]) and `k` is the number of existing ranges that
+	/// overlap, or are connected to, `key`. Each of the `k` affected ranges is
+	/// merged, split or replaced with one `O(log n)` B-tree operation, on top
+	/// of the initial `O(log n)` lookup. Usually `O(log n)`; worst case (e.g.
+	/// inserting a range spanning the whole map) is `O(n log n)`.
 	pub fn insert<R: IntoRange<Item = K>>(&mut self, key: R, value: V)
 	where
 		K: Clone + PartialEnum + Measure,
@@ -829,6 +864,15 @@ impl<K, V, C: Storage<Item<AnyRange<K>, V>>> RangeMap<K, V, C> {
 	}
 
 	/// Remove a key.
+	///
+	/// # Complexity
+	///
+	/// `O((k + 1) log n)`, where `n` is the number of ranges in the map
+	/// ([`Self::range_count`]) and `k` is the number of existing ranges that
+	/// intersect `key`. Each intersecting range costs one `O(log n)` B-tree
+	/// operation (split, shrink or removal), on top of the initial `O(log n)`
+	/// lookup. Usually `O(log n)`; worst case (`key` intersects every stored
+	/// range) is `O(n log n)`.
 	pub fn remove<R: AsRange<Item = K>>(&mut self, key: R)
 	where
 		K: Clone + PartialEnum + Measure,

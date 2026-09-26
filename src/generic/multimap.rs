@@ -59,6 +59,13 @@ impl<'a, K: Clone + PartialOrd + Measure, S, C: Storage<Item<AnyRange<K>, S>>> I
 }
 
 impl<K, S, C: Storage<Item<AnyRange<K>, S>>> RangeMultiMap<K, S, C> {
+	/// # Complexity
+	///
+	/// `O((k + 1) log n + |S|)`, where `n` is the number of ranges in the map,
+	/// `k` is the number of existing ranges that overlap, or are connected
+	/// to, `key` (see [`RangeMap::update`]), and `|S|` is the size of the
+	/// value set attached to the affected range, which is cloned and mutated
+	/// by this operation.
 	pub fn insert<R: AsRange<Item = K>, V>(&mut self, key: R, value: V)
 	where
 		K: Clone + PartialEnum + Measure,
@@ -76,6 +83,13 @@ impl<K, S, C: Storage<Item<AnyRange<K>, S>>> RangeMultiMap<K, S, C> {
 		})
 	}
 
+	/// # Complexity
+	///
+	/// `O((k + 1) log n + |S|)`, where `n` is the number of ranges in the map,
+	/// `k` is the number of existing ranges that overlap, or are connected
+	/// to, `key` (see [`RangeMap::update`]), and `|S|` is the size of the
+	/// value set attached to the affected range, which is cloned and mutated
+	/// by this operation.
 	pub fn remove<R: AsRange<Item = K>, V>(&mut self, key: R, value: &V)
 	where
 		K: Clone + PartialEnum + Measure,
