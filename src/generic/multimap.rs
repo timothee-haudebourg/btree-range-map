@@ -69,7 +69,7 @@ impl<K, S, C: Storage<Item<AnyRange<K>, S>>> RangeMultiMap<K, S, C> {
 	pub fn insert<R: AsRange<Item = K>, V>(&mut self, key: R, value: V)
 	where
 		K: Clone + PartialEnum + Measure,
-		V: PartialEq + Clone,
+		V: Clone,
 		S: SetMut<V> + PartialEq + Clone + Default,
 	{
 		self.map.update(key, |set_opt| {
@@ -93,8 +93,7 @@ impl<K, S, C: Storage<Item<AnyRange<K>, S>>> RangeMultiMap<K, S, C> {
 	pub fn remove<R: AsRange<Item = K>, V>(&mut self, key: R, value: &V)
 	where
 		K: Clone + PartialEnum + Measure,
-		V: PartialEq + Clone,
-		S: SetMut<V> + PartialEq + Clone + Default,
+		S: SetMut<V> + PartialEq + Clone,
 	{
 		self.map.update(key, |set_opt| match set_opt {
 			Some(set) => {
