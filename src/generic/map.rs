@@ -1146,14 +1146,13 @@ where
 		while j - i > 1 {
 			let k = (i + j) / 2;
 
-			if let Some(ord) = element.range_partial_cmp(&items[k].as_ref().key) {
+			{
+				let ord = element.range_partial_cmp(&items[k].as_ref().key)?;
 				if ord.is_before(connected) {
 					j = k;
 				} else {
 					i = k;
 				}
-			} else {
-				return None; // FIXME: that's bad. Maybe we should expect a total order.
 			}
 		}
 
