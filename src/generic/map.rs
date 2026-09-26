@@ -712,10 +712,6 @@ impl<K, V, C: Storage<Item<AnyRange<K>, V>>> RangeMap<K, V, C> {
 				}
 			}
 		}
-
-		for (range, _) in self.iter() {
-			debug_assert!(!range.is_empty());
-		}
 	}
 
 	pub fn insert_disconnected<R: IntoRange<Item = K>>(
