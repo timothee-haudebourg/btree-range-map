@@ -121,3 +121,97 @@ impl<K: Clone + PartialOrd + Measure, S, C: Storage<Item<AnyRange<K>, S>>> IntoI
 		self.map.into_iter()
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use crate::{AnyRange, RangeMultiMap};
+	use std::collections::BTreeSet;
+
+	fn set<const N: usize>(values: [&'static str; N]) -> BTreeSet<&'static str> {
+		values.into_iter().collect()
+	}
+
+	fn entries(
+		map: &RangeMultiMap<i32, BTreeSet<&'static str>>,
+	) -> Vec<(AnyRange<i32>, BTreeSet<&'static str>)> {
+		map.iter()
+			.map(|(range, values)| (*range, values.clone()))
+			.collect()
+	}
+
+	#[test]
+	fn insert_single_range() {
+		let mut map: RangeMultiMap<i32, BTreeSet<&str>> = RangeMultiMap::new();
+
+		map.insert(0..10, "a");
+
+		assert_eq!(entries(&map), vec![(AnyRange::from(0..10), set(["a"]))]);
+	}
+
+	#[test]
+	fn insert_creates_sub_range() {
+		let mut map: RangeMultiMap<i32, BTreeSet<&str>> = RangeMultiMap::new();
+
+		// 1. One range is set to a given set of values.
+		map.insert(0..10, "a");
+
+		// 2. A value is added to a sub-range: splits the range in three.
+		map.insert(3..6, "b");
+
+		assert_eq!(
+			entries(&map),
+			vec![
+				(AnyRange::from(0..3), set(["a"])),
+				(AnyRange::from(3..6), set(["a", "b"])),
+				(AnyRange::from(6..10), set(["a"])),
+			]
+		);
+	}
+
+	/// Regression test: adding a value to a sub-range and then removing it
+	/// again must merge the map back into a single range, instead of leaving
+	/// three ranges that all happen to carry the same value set.
+	#[test]
+	fn insert_then_remove_sub_range_merges_back() {
+		let mut map: RangeMultiMap<i32, BTreeSet<&str>> = RangeMultiMap::new();
+
+		// 1. One range is set to a given set of values (1 range).
+		map.insert(0..10, "a");
+		assert_eq!(map.iter().count(), 1);
+
+		// 2. A value is added to a sub-range (3 ranges).
+		map.insert(3..6, "b");
+		assert_eq!(map.iter().count(), 3);
+
+		// 3. The value is removed from that range: back to 1 range.
+		map.remove(3..6, &"b");
+
+		assert_eq!(
+			entries(&map),
+			vec![(AnyRange::from(0..10), set(["a"]))],
+			"the three ranges must be merged back into one, not left as three \
+			 identical ranges"
+		);
+	}
+
+	#[test]
+	fn remove_absent_value_is_noop() {
+		let mut map: RangeMultiMap<i32, BTreeSet<&str>> = RangeMultiMap::new();
+
+		map.insert(0..10, "a");
+		map.remove(0..10, &"z");
+
+		assert_eq!(entries(&map), vec![(AnyRange::from(0..10), set(["a"]))]);
+	}
+
+	#[test]
+	fn remove_last_value_drops_range() {
+		let mut map: RangeMultiMap<i32, BTreeSet<&str>> = RangeMultiMap::new();
+
+		map.insert(0..10, "a");
+		map.remove(0..10, &"a");
+
+		assert_eq!(entries(&map), vec![]);
+		assert_eq!(map.iter().count(), 0);
+	}
+}
