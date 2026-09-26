@@ -1,6 +1,6 @@
 [package]
 name = "btree-range-map"
-version = "0.8.1"
+version = "0.8.2"
 authors = ["Timothée Haudebourg <author@haudebourg.net>"]
 edition = "2024"
 
